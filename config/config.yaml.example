@@ -1,0 +1,18 @@
+server:
+  host: "127.0.0.1"
+  port: 5609
+
+backends:
+  agent_bus:
+    url: "http://127.0.0.1:7490"
+    gateway_token_file: "/data/ronin/secrets/ronin-mcp.token"
+  dev_dispatch:
+    url: "http://127.0.0.1:7460"
+  work_folder:
+    mcp_url: "http://127.0.0.1:5605/mcp"
+  pump_state:
+    runs_root: "/data/ronin/runs"
+
+auth:
+  prod_write_enabled: false
+  ephemeral: false
