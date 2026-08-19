@@ -107,6 +107,57 @@ def controller_client(controller_double: Any) -> Any:
     return DevDispatchClient(controller_double.url)
 
 
+class _StubEphemeralRuntime:
+    """A test stub of EphemeralRuntime that reuses the in-process doubles.
+
+    The real EphemeralRuntime spawns subprocesses; tests need the
+    doubles (already started as separate ThreadingHTTPServers) so the
+    production httpx clients can talk to them over real TCP. The stub
+    exposes the same surface (bus_url / bus_gateway_token /
+    controller_url / work_folder_root / close) as EphemeralRuntime.
+    """
+
+    def __init__(
+        self,
+        bus_double: Any,
+        controller_double: Any,
+        work_folder_root: str,
+    ) -> None:
+        self._bus_double = bus_double
+        self._controller_double = controller_double
+        self._work_folder_root = work_folder_root
+        self._closed = False
+
+    @property
+    def bus_url(self) -> str:
+        return self._bus_double.url
+
+    @property
+    def bus_gateway_token(self) -> str:
+        return "test-gateway-token-32-chars-minimum!"
+
+    @property
+    def controller_url(self) -> str:
+        return self._controller_double.url
+
+    @property
+    def work_folder_root(self) -> str:
+        return self._work_folder_root
+
+    def close(self) -> None:
+        self._closed = True
+
+
+@pytest.fixture
+def ephemeral_runtime(
+    bus_double: Any,
+    controller_double: Any,
+    tmp_runs_root: str,
+) -> Any:
+    """An EphemeralRuntime-like stub wired to the in-process doubles."""
+    return _StubEphemeralRuntime(bus_double, controller_double, tmp_runs_root)
+
+
 @pytest.fixture
 def make_config() -> Any:
     """Factory for config dicts with the given auth flags."""
@@ -133,14 +184,64 @@ def mcp_server_factory(
     """Factory that builds a FastMCP server with the doubles wired in."""
     from ronin_mcp.server import build_mcp_server
 
-    def _build(config: dict[str, Any]) -> Any:
+    def _build(
+        config: dict[str, Any],
+        *,
+        ephemeral_runtime: Any = None,
+    ) -> Any:
         return build_mcp_server(
             config,
             bus_client=bus_client,
             controller_client=controller_client,
             work_folder_client=fake_work_folder,
             pump_client=pump_client,
+            ephemeral_runtime=ephemeral_runtime,
         )
+
+    return _build
+
+
+@pytest.fixture
+def ephemeral_server_factory(
+    bus_double: Any,
+    controller_double: Any,
+    pump_client: Any,
+    tmp_runs_root: str,
+) -> Any:
+    """Factory that builds an ephemeral server backed by in-process doubles.
+
+    Unlike ``mcp_server_factory``, this does NOT inject bus/controller/
+    work-folder clients: the server builds them from the ephemeral
+    runtime's URLs, so tests can assert that writes actually route to
+    the ephemeral backends (not the configured production URLs).
+    """
+    from ronin_mcp.ephemeral import EphemeralRuntime, TempDirWorkFolderClient
+    from ronin_mcp.server import build_mcp_server
+
+    def _make_bus_spawner(double: Any) -> Any:
+        def _spawn() -> Any:
+            return double.url, "test-gateway-token-32-chars-minimum!", double.stop
+
+        return _spawn
+
+    def _make_controller_spawner(double: Any) -> Any:
+        def _spawn() -> Any:
+            return double.url, double.stop
+
+        return _spawn
+
+    def _build(config: dict[str, Any]) -> Any:
+        rt = EphemeralRuntime(
+            bus_spawner=_make_bus_spawner(bus_double),
+            controller_spawner=_make_controller_spawner(controller_double),
+            work_folder_root=tmp_runs_root,
+        )
+        rt.start()
+        return build_mcp_server(
+            config,
+            pump_client=pump_client,
+            ephemeral_runtime=rt,
+        ), rt
 
     return _build
 

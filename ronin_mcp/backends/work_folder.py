@@ -7,12 +7,21 @@ maps 1:1 to the underlying MCP tool of the same (wf_* / fs_*) name.
 The client is a thin async wrapper around fastmcp.Client so that the
 facets can call tools with native Python signatures and have the result
 returned as a dict / list.
+
+Backend errors surface as ``BackendError`` carrying the canonical
+``{code, message, details: {retryable}}`` envelope (spec §错误模型):
+``BACKEND_UNAVAILABLE`` when the MCP cannot be reached, ``BACKEND_ERROR``
+when the MCP returned an error payload.
 """
 
 from __future__ import annotations
 
 import asyncio
 from typing import Any
+
+import httpx
+
+from ronin_mcp.backends.agent_bus import BackendError
 
 
 class WorkFolderClient:
@@ -40,6 +49,10 @@ class WorkFolderClient:
         Returns the first text content item parsed as JSON when the
         result carries structured text content; otherwise returns the
         raw structured payload.
+
+        Raises ``BackendError`` when the work-folder MCP is unreachable
+        (``BACKEND_UNAVAILABLE``) or returns an error payload
+        (``BACKEND_ERROR``).
         """
         if self._client_factory is not None:
             client = self._client_factory(self._mcp_url)
@@ -48,8 +61,23 @@ class WorkFolderClient:
 
             client = Client(self._mcp_url)
 
-        async with client:
-            result = await client.call_tool(tool_name, arguments)
+        try:
+            async with client:
+                result = await client.call_tool(tool_name, arguments)
+        except httpx.RequestError as exc:
+            raise BackendError(
+                f"work-folder MCP {tool_name} unavailable: {exc}",
+                code="BACKEND_UNAVAILABLE",
+                retryable=True,
+            ) from exc
+        except Exception as exc:
+            if isinstance(exc, BackendError):
+                raise
+            raise BackendError(
+                f"work-folder MCP {tool_name} failed: {exc}",
+                code="BACKEND_ERROR",
+                retryable=False,
+            ) from exc
         return _extract_content(result)
 
     def call_sync(self, tool_name: str, arguments: dict[str, Any]) -> Any:

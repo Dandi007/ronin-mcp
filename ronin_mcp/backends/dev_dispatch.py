@@ -5,6 +5,11 @@ by the loop-engine-development-mcp Controller. The Controller has no
 authentication (it binds 127.0.0.1); ronin-mcp injects an
 X-Operator-Identity header from the as_agent_id parameter so the
 Controller can record the operator on whose behalf a mutation was made.
+
+Backend errors surface as ``BackendError`` carrying the canonical
+``{code, message, details: {retryable}}`` envelope (spec §错误模型).
+``BACKEND_UNAVAILABLE`` distinguishes an unreachable Controller from
+``BACKEND_ERROR`` (Controller returned a non-2xx / invalid JSON).
 """
 
 from __future__ import annotations
@@ -45,12 +50,19 @@ class DevDispatchClient:
         params: dict[str, Any] | None = None,
         as_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        resp = self._client.get(
-            f"{self._base_url}{path}",
-            params=params,
-            headers=self._headers(as_agent_id),
-            timeout=30.0,
-        )
+        try:
+            resp = self._client.get(
+                f"{self._base_url}{path}",
+                params=params,
+                headers=self._headers(as_agent_id),
+                timeout=30.0,
+            )
+        except httpx.RequestError as exc:
+            raise BackendError(
+                f"controller GET {path} unavailable: {exc}",
+                code="BACKEND_UNAVAILABLE",
+                retryable=True,
+            ) from exc
         return _handle_response(resp, path, "GET")
 
     def post(
@@ -59,12 +71,19 @@ class DevDispatchClient:
         body: dict[str, Any],
         as_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        resp = self._client.post(
-            f"{self._base_url}{path}",
-            json=body,
-            headers=self._headers(as_agent_id),
-            timeout=30.0,
-        )
+        try:
+            resp = self._client.post(
+                f"{self._base_url}{path}",
+                json=body,
+                headers=self._headers(as_agent_id),
+                timeout=30.0,
+            )
+        except httpx.RequestError as exc:
+            raise BackendError(
+                f"controller POST {path} unavailable: {exc}",
+                code="BACKEND_UNAVAILABLE",
+                retryable=True,
+            ) from exc
         return _handle_response(resp, path, "POST")
 
     def close(self) -> None:
@@ -82,15 +101,20 @@ def _handle_response(resp: httpx.Response, path: str, method: str) -> dict[str, 
             if not isinstance(payload, str)
             else payload
         )
+        retryable = 500 <= resp.status_code < 600
         raise BackendError(
             f"controller {method} {path} failed with HTTP {resp.status_code}: {detail}",
+            code="BACKEND_ERROR",
             status_code=resp.status_code,
             payload=payload,
+            retryable=retryable,
         )
     try:
         return cast(dict[str, Any], resp.json())
     except ValueError as exc:
         raise BackendError(
             f"controller {method} {path} returned invalid JSON: {exc}",
+            code="BACKEND_ERROR",
             status_code=resp.status_code,
+            retryable=False,
         ) from exc

@@ -56,12 +56,20 @@ def build_mcp_server(
     work_folder_client: WorkFolderClient | None = None,
     pump_client: PumpStateClient | None = None,
     error_wrapper: Callable[[Callable[[], Any]], Any] | None = None,
+    ephemeral_runtime: Any = None,
 ) -> Any:
     """Build a FastMCP server with all seven facets registered.
 
     Client injection is optional so tests can substitute doubles. When a
     client is None, build_mcp_server constructs the production client
     from the provided config.
+
+    In ephemeral mode (``config['auth']['ephemeral']`` is True) the
+    server routes ALL writes to the ephemeral backends owned by the
+    supplied ``ephemeral_runtime`` — never to the configured (potentially
+    production) backend URLs. The caller is responsible for starting the
+    ``EphemeralRuntime`` (it is injected here so the server build is
+    deterministic and testable).
     """
     try:
         from fastmcp import FastMCP
@@ -83,16 +91,27 @@ def build_mcp_server(
     wf_cfg = backends.get("work_folder", {})
     pump_cfg = backends.get("pump_state", {})
 
-    bus = bus_client or AgentBusClient(
-        bus_cfg.get("url", "http://127.0.0.1:7490"),
-        gateway_token=resolve_gateway_token(config),
-    )
-    controller = controller_client or DevDispatchClient(
-        dd_cfg.get("url", "http://127.0.0.1:7460"),
-    )
-    work_folder = work_folder_client or WorkFolderClient(
-        wf_cfg.get("mcp_url", "http://127.0.0.1:5605/mcp"),
-    )
+    if auth.ephemeral and ephemeral_runtime is not None:
+        # Spec 判据 1 rule 1: route ALL writes to --ephemeral backends.
+        bus = bus_client or AgentBusClient(
+            ephemeral_runtime.bus_url,
+            gateway_token=ephemeral_runtime.bus_gateway_token,
+        )
+        controller = controller_client or DevDispatchClient(
+            ephemeral_runtime.controller_url,
+        )
+        work_folder = work_folder_client or _build_ephemeral_work_folder(ephemeral_runtime)
+    else:
+        bus = bus_client or AgentBusClient(
+            bus_cfg.get("url", "http://127.0.0.1:7490"),
+            gateway_token=resolve_gateway_token(config),
+        )
+        controller = controller_client or DevDispatchClient(
+            dd_cfg.get("url", "http://127.0.0.1:7460"),
+        )
+        work_folder = work_folder_client or WorkFolderClient(
+            wf_cfg.get("mcp_url", "http://127.0.0.1:5605/mcp"),
+        )
     pump = pump_client or PumpStateClient(
         pump_cfg.get("runs_root", "/data/ronin/runs"),
     )
@@ -118,8 +137,29 @@ def build_mcp_server(
     return mcp
 
 
+def _build_ephemeral_work_folder(ephemeral_runtime: Any) -> Any:
+    """Build a temp-dir-backed work-folder client for ephemeral mode.
+
+    Spec 判据 1 rule 1: work-folder writes must route to a temp dir,
+    never to the production katana-work-folder MCP.
+    """
+    from ronin_mcp.ephemeral import TempDirWorkFolderClient
+
+    return TempDirWorkFolderClient(ephemeral_runtime.work_folder_root)
+
+
 def _make_error_wrapper(tool_error_cls: type) -> Callable[[Callable[[], Any]], Any]:
-    """Wrap a callable so backend / auth errors surface as ToolError."""
+    """Wrap a callable so backend / auth errors surface as ToolError.
+
+    Auth and backend errors are serialized as the canonical structured
+    envelope required by spec §错误模型 so callers can parse the
+    ``{code, message, details: {retryable}}`` shape from the ToolError
+    message:
+
+        WriteAuthError  -> {"code": "PROD_WRITE_NOT_AUTHORIZED", ...}
+        BackendError    -> {"code": "BACKEND_ERROR" | "BACKEND_UNAVAILABLE",
+                            "message": ..., "details": {"retryable": bool}}
+    """
 
     def _wrapper(fn: Callable[[], Any]) -> Any:
         try:
@@ -129,7 +169,9 @@ def _make_error_wrapper(tool_error_cls: type) -> Callable[[Callable[[], Any]], A
                 json.dumps(exc.payload, ensure_ascii=False)
             ) from exc
         except BackendError as exc:
-            raise tool_error_cls(str(exc)) from exc
+            raise tool_error_cls(
+                json.dumps(exc.envelope, ensure_ascii=False)
+            ) from exc
 
     return _wrapper
 
@@ -173,15 +215,31 @@ def main() -> None:
             )
             sys.exit(1)
 
-    mcp = build_mcp_server(config)
+    # Spec 判据 1 rule 1 + 判据 3: --ephemeral must start temporary
+    # agent-bus + Controller instances and route ALL writes to them,
+    # never to the configured (potentially production) backend URLs. The
+    # ephemeral runtime owns the temp resources and cleans them up on
+    # process exit (including via atexit so signal kills still clean up).
+    ephemeral_runtime: Any = None
+    if config["auth"]["ephemeral"]:
+        from ronin_mcp.ephemeral import EphemeralRuntime
 
-    server_cfg = config.get("server", {})
-    host = server_cfg.get("host", "127.0.0.1")
-    port = server_cfg.get("port", 5609)
+        ephemeral_runtime = EphemeralRuntime().start()
 
-    _wait_for_backends(config)
+    try:
+        mcp = build_mcp_server(config, ephemeral_runtime=ephemeral_runtime)
 
-    mcp.run(transport="streamable-http", host=host, port=port, path="/mcp")
+        server_cfg = config.get("server", {})
+        host = server_cfg.get("host", "127.0.0.1")
+        port = server_cfg.get("port", 5609)
+
+        if not config["auth"]["ephemeral"]:
+            _wait_for_backends(config)
+
+        mcp.run(transport="streamable-http", host=host, port=port, path="/mcp")
+    finally:
+        if ephemeral_runtime is not None:
+            ephemeral_runtime.close()
 
 
 def _wait_for_backends(config: dict[str, Any]) -> None:
