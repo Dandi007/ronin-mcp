@@ -71,9 +71,30 @@ def register(mcp: Any, *, bus: AgentBusClient, auth_state: dict[str, Any]) -> No
         channel_id: str,
         as_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        """Get chatgroup details."""
+        """Get chatgroup details (including the member list).
+
+        Per spec 面 2 the backend is ``GET /v1/channels`` + ``/v1/deliveries``:
+        the channel record is fetched first, then the active member list is
+        derived from the distinct ``agent_id`` values in the channel's
+        deliveries.
+        """
         full = _full_channel_id(channel_id)
-        return bus.get(f"/v1/channels/{full}", as_agent_id=as_agent_id)
+        channel = bus.get(f"/v1/channels/{full}", as_agent_id=as_agent_id)
+        deliveries = bus.get(
+            "/v1/deliveries",
+            params={"channel_id": full},
+            as_agent_id=as_agent_id,
+        )
+        members: list[str] = []
+        seen: set[str] = set()
+        for delivery in deliveries.get("deliveries", []) if isinstance(deliveries, dict) else []:
+            agent_id = delivery.get("agent_id") if isinstance(delivery, dict) else None
+            if agent_id and agent_id not in seen:
+                seen.add(agent_id)
+                members.append(agent_id)
+        if isinstance(channel, dict):
+            channel["members"] = members
+        return channel
 
     @mcp.tool()
     def ronin_chatgroup_add_member(

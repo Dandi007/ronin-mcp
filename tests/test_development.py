@@ -84,51 +84,120 @@ class TestDevWriteTools:
     def test_dev_start(self, fake_controller) -> None:
         mcp = _make_server(controller=fake_controller)
         _call(mcp, "ronin_dev_start", {
-            "development_id": "dev-1", "idempotency_key": "ik",
+            "development_id": "gd:dev-1", "idempotency_key": "ik",
             "expected_revision": 3, "reason": "go",
         })
         method, path, body, op = fake_controller.calls[-1]
-        assert path == "/v1/developments/dev-1/commands/start"
+        assert path == "/v1/developments/gd:dev-1/commands/start"
         assert body["expected_revision"] == 3
         assert body["reason"] == "go"
 
     def test_dev_steer(self, fake_controller) -> None:
         mcp = _make_server(controller=fake_controller)
         _call(mcp, "ronin_dev_steer", {
-            "development_id": "dev-1", "instruction": "stop", "idempotency_key": "ik",
+            "development_id": "gd:dev-1", "instruction": "stop", "idempotency_key": "ik",
             "expected_revision": 4,
         })
         method, path, body, op = fake_controller.calls[-1]
-        assert path == "/v1/developments/dev-1/commands/steer"
+        assert path == "/v1/developments/gd:dev-1/commands/steer"
         assert body["instruction"] == "stop"
         assert body["urgency"] == "next_safe_boundary"
 
     def test_dev_reconfigure(self, fake_controller) -> None:
         mcp = _make_server(controller=fake_controller)
         _call(mcp, "ronin_dev_reconfigure", {
-            "development_id": "dev-1", "idempotency_key": "ik",
+            "development_id": "gd:dev-1", "idempotency_key": "ik",
             "expected_revision": 4, "profile": "alt",
         })
         method, path, body, op = fake_controller.calls[-1]
-        assert path == "/v1/developments/dev-1/commands/reconfigure"
+        assert path == "/v1/developments/gd:dev-1/commands/reconfigure"
         assert body["profile"] == "alt"
 
     def test_dev_control(self, fake_controller) -> None:
         mcp = _make_server(controller=fake_controller)
         _call(mcp, "ronin_dev_control", {
-            "development_id": "dev-1", "action": "pause", "idempotency_key": "ik",
+            "development_id": "gd:dev-1", "action": "pause", "idempotency_key": "ik",
             "expected_revision": 4,
         })
         method, path, body, op = fake_controller.calls[-1]
-        assert path == "/v1/developments/dev-1/commands/control"
+        assert path == "/v1/developments/gd:dev-1/commands/control"
         assert body["action"] == "pause"
 
     def test_dev_relock(self, fake_controller) -> None:
         mcp = _make_server(controller=fake_controller)
         _call(mcp, "ronin_dev_relock", {
-            "development_id": "dev-1", "plugin_commit": "abc123",
+            "development_id": "gd:dev-1", "plugin_commit": "abc123",
             "idempotency_key": "ik", "expected_revision": 4,
         })
         method, path, body, op = fake_controller.calls[-1]
-        assert path == "/v1/developments/dev-1/commands/relock"
+        assert path == "/v1/developments/gd:dev-1/commands/relock"
         assert body["plugin_commit"] == "abc123"
+
+
+class TestDevWriteGuardrails:
+    """Spec 判据 1: *_start / *_steer / *_control / *_reconfigure / *_relock
+    are write-surface tools and must run check_write_auth at the entrance."""
+
+    @pytest.mark.parametrize(
+        "tool,args",
+        [
+            ("ronin_dev_start", {"development_id": "prod-dev", "idempotency_key": "ik",
+                                 "expected_revision": 3, "reason": "go"}),
+            ("ronin_dev_steer", {"development_id": "prod-dev", "instruction": "stop",
+                                 "idempotency_key": "ik", "expected_revision": 4}),
+            ("ronin_dev_reconfigure", {"development_id": "prod-dev", "idempotency_key": "ik",
+                                       "expected_revision": 4, "profile": "alt"}),
+            ("ronin_dev_control", {"development_id": "prod-dev", "action": "pause",
+                                   "idempotency_key": "ik", "expected_revision": 4}),
+            ("ronin_dev_relock", {"development_id": "prod-dev", "plugin_commit": "abc123",
+                                  "idempotency_key": "ik", "expected_revision": 4}),
+        ],
+    )
+    def test_prod_dev_command_rejected(self, fake_controller, tool, args) -> None:
+        mcp = _make_server(controller=fake_controller)
+        out = _call(mcp, tool, args)
+        assert out["code"] == "PROD_WRITE_NOT_AUTHORIZED"
+        assert fake_controller.calls == []
+
+    @pytest.mark.parametrize(
+        "tool,extra",
+        [
+            ("ronin_dev_start", {"reason": "go"}),
+            ("ronin_dev_steer", {"instruction": "stop"}),
+            ("ronin_dev_reconfigure", {"profile": "alt"}),
+            ("ronin_dev_control", {"action": "pause"}),
+            ("ronin_dev_relock", {"plugin_commit": "abc123"}),
+        ],
+    )
+    def test_gd_dev_command_proceeds(self, fake_controller, tool, extra) -> None:
+        mcp = _make_server(controller=fake_controller)
+        args = {"development_id": "gd:dev-1", "idempotency_key": "ik",
+                "expected_revision": 4}
+        args.update(extra)
+        out = _call(mcp, tool, args)
+        assert out.get("ok") is True
+        assert fake_controller.calls != []
+
+    @pytest.mark.parametrize(
+        "tool,extra",
+        [
+            ("ronin_dev_start", {"reason": "go"}),
+            ("ronin_dev_steer", {"instruction": "stop"}),
+            ("ronin_dev_reconfigure", {"profile": "alt"}),
+            ("ronin_dev_control", {"action": "pause"}),
+            ("ronin_dev_relock", {"plugin_commit": "abc123"}),
+        ],
+    )
+    def test_prod_dev_command_allowed_with_prod_write(
+        self, fake_controller, tool, extra
+    ) -> None:
+        mcp = _make_server(
+            controller=fake_controller,
+            auth_state={"ephemeral": False, "prod_write_enabled": True},
+        )
+        args = {"development_id": "prod-dev", "idempotency_key": "ik",
+                "expected_revision": 4}
+        args.update(extra)
+        out = _call(mcp, tool, args)
+        assert out.get("ok") is True
+        assert fake_controller.calls != []

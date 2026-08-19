@@ -67,14 +67,14 @@ class TestMessagingGuardrails:
         out = _call(mcp, "ronin_msg_broadcast", {
             "payload": {}, "idempotency_key": "ik",
         })
-        assert out["code"] == "GATE_REQUIRES_PROD_WRITE"
+        assert out["code"] == "PROD_WRITE_NOT_AUTHORIZED"
 
     def test_broadcast_rejected_even_with_gd(self, fake_bus) -> None:
         mcp = _make_server(bus=fake_bus)
         out = _call(mcp, "ronin_msg_broadcast", {
             "payload": {}, "idempotency_key": "ik",
         })
-        assert out["code"] == "GATE_REQUIRES_PROD_WRITE"
+        assert out["code"] == "PROD_WRITE_NOT_AUTHORIZED"
         assert fake_bus.calls == []
 
     def test_broadcast_allowed_with_prod_write(self, fake_bus) -> None:

@@ -103,7 +103,11 @@ def register(mcp: Any, *, controller: DevDispatchClient, auth_state: dict[str, A
         expected_revision: int,
         reason: str = "",
     ) -> dict[str, Any]:
-        """Start a BOOTSTRAPPING development."""
+        """Start a BOOTSTRAPPING development (requires gd: or RONIN_PROD_WRITE=1)."""
+        try:
+            check_write_auth(auth_state, development_id)
+        except WriteAuthError as exc:
+            return exc.as_error_dict()
         return controller.post(
             f"/v1/developments/{development_id}/commands/start",
             {
@@ -122,7 +126,11 @@ def register(mcp: Any, *, controller: DevDispatchClient, auth_state: dict[str, A
         reason: str = "",
         urgency: str = "next_safe_boundary",
     ) -> dict[str, Any]:
-        """Inject a steering instruction."""
+        """Inject a steering instruction (requires gd: or RONIN_PROD_WRITE=1)."""
+        try:
+            check_write_auth(auth_state, development_id)
+        except WriteAuthError as exc:
+            return exc.as_error_dict()
         return controller.post(
             f"/v1/developments/{development_id}/commands/steer",
             {
@@ -146,7 +154,11 @@ def register(mcp: Any, *, controller: DevDispatchClient, auth_state: dict[str, A
         acceptance_commands: list[dict[str, Any]] | None = None,
         setup_commands: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Reconfigure a development's profile/policy/commands."""
+        """Reconfigure a development's profile/policy/commands (requires gd: or RONIN_PROD_WRITE=1)."""
+        try:
+            check_write_auth(auth_state, development_id)
+        except WriteAuthError as exc:
+            return exc.as_error_dict()
         body: dict[str, Any] = {
             "idempotency_key": idempotency_key,
             "expected_revision": expected_revision,
@@ -175,7 +187,11 @@ def register(mcp: Any, *, controller: DevDispatchClient, auth_state: dict[str, A
         expected_revision: int,
         reason: str = "",
     ) -> dict[str, Any]:
-        """Pause/resume/cancel a development."""
+        """Pause/resume/cancel a development (requires gd: or RONIN_PROD_WRITE=1)."""
+        try:
+            check_write_auth(auth_state, development_id)
+        except WriteAuthError as exc:
+            return exc.as_error_dict()
         return controller.post(
             f"/v1/developments/{development_id}/commands/control",
             {
@@ -194,7 +210,11 @@ def register(mcp: Any, *, controller: DevDispatchClient, auth_state: dict[str, A
         expected_revision: int,
         reason: str = "",
     ) -> dict[str, Any]:
-        """Relock a development to a new plugin commit."""
+        """Relock a development to a new plugin commit (requires gd: or RONIN_PROD_WRITE=1)."""
+        try:
+            check_write_auth(auth_state, development_id)
+        except WriteAuthError as exc:
+            return exc.as_error_dict()
         return controller.post(
             f"/v1/developments/{development_id}/commands/relock",
             {

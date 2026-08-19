@@ -84,9 +84,14 @@ def register(mcp: Any, *, bus: AgentBusClient, auth_state: dict[str, Any]) -> No
         idempotency_key: str,
         as_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        """Broadcast to online human principals (always requires RONIN_PROD_WRITE=1)."""
+        """Broadcast to online human principals (always requires RONIN_PROD_WRITE=1).
+
+        Broadcast is a production write with no ``gd:`` test namespace, so a
+        rejection returns ``PROD_WRITE_NOT_AUTHORIZED`` (the ``GATE_REQUIRES_PROD_WRITE``
+        code is reserved for gate approve/reject per the spec error model).
+        """
         try:
-            check_write_auth(auth_state, "broadcast", prod_write_required=True)
+            check_write_auth(auth_state, "broadcast")
         except WriteAuthError as exc:
             return exc.as_error_dict()
         return bus.post(

@@ -93,8 +93,30 @@ class TestChatgroupRead:
         mcp = _make_server(bus=fake_bus)
         out = _call(mcp, "ronin_chatgroup_get", {"channel_id": "gd:x"})
         assert out["channel_id"] == "chatgroup:gd:x"
-        method, path, params, as_id = fake_bus.calls[-1]
+        assert out["members"] == []
+        # First call fetches the channel record.
+        method, path, params, as_id = fake_bus.calls[0]
         assert path == "/v1/channels/chatgroup:gd:x"
+        # Second call fetches deliveries to derive the member list (spec 面 2).
+        method, path, params, as_id = fake_bus.calls[1]
+        assert path == "/v1/deliveries"
+        assert params == {"channel_id": "chatgroup:gd:x"}
+
+    def test_get_includes_members_from_deliveries(self, fake_bus) -> None:
+        # The FakeBusClient returns the same canned response for every call;
+        # configure it so the deliveries call carries distinct agent_ids.
+        fake_bus._response = {
+            "channel_id": "chatgroup:gd:grp",
+            "deliveries": [
+                {"delivery_id": "d1", "agent_id": "gd:bot-a"},
+                {"delivery_id": "d2", "agent_id": "gd:bot-b"},
+                {"delivery_id": "d3", "agent_id": "gd:bot-a"},  # duplicate
+            ],
+        }
+        mcp = _make_server(bus=fake_bus)
+        out = _call(mcp, "ronin_chatgroup_get", {"channel_id": "gd:grp"})
+        assert out["channel_id"] == "chatgroup:gd:grp"
+        assert out["members"] == ["gd:bot-a", "gd:bot-b"]
 
 
 class TestChatgroupRoundTrip:
