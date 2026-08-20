@@ -1,0 +1,13 @@
+[Unit]
+Description=Ronin MCP (aggregating facade for the ronin fleet control plane)
+After=agent-bus-server.service agent-bus-mcp.service loop-engine-development-mcp.service
+
+[Service]
+Type=simple
+ExecStart=/data/code/self/ronin-mcp/.venv/bin/python -m ronin_mcp.server
+EnvironmentFile=%h/.config/ronin/secrets.env
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
