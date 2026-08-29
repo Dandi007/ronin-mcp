@@ -83,6 +83,15 @@ def build_mcp_server(
 
     mcp = FastMCP("ronin-mcp", instructions=MCP_INSTRUCTIONS)
 
+    @mcp.custom_route("/metrics", methods=["GET"])
+    async def _metrics_route(_request: Any) -> Any:
+        from starlette.responses import PlainTextResponse
+
+        return PlainTextResponse(
+            "ronin_mcp_up 1",
+            media_type="text/plain; version=0.0.4",
+        )
+
     auth = AuthState.from_config(config)
 
     backends = config.get("backends", {})
