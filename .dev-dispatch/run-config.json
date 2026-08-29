@@ -1,0 +1,13 @@
+{
+ "development_id": "dev-fg-d0ac27952975",
+ "generation": 1,
+ "acceptance_commands": [
+  [
+   "bash",
+   "-lc",
+   "uv sync --extra dev && uv run pytest -q tests/test_metrics.py"
+  ]
+ ],
+ "setup_commands": [],
+ "acceptance_env": {}
+}
