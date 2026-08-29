@@ -1,0 +1,17 @@
+{
+ "development_id": "dev-fg-d0ac27952975",
+ "attempt": 1,
+ "passed": true,
+ "results": [
+  {
+   "command": [
+    "bash",
+    "-lc",
+    "uv sync --extra dev && uv run pytest -q tests/test_metrics.py"
+   ],
+   "exit_code": 0,
+   "stdout_tail": ".....                                                                    [100%]\n=============================== warnings summary ===============================\ntests/test_metrics.py::test_metrics_endpoint_200_and_body\n  /data/worktrees/ronin-mcp-h0-dev_fleet_metrics_01_20260830/tests/test_metrics.py:25: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n5 passed, 1 warning in 6.04s\n",
+   "stderr_tail": "Resolved 82 packages in 1ms\nChecked 75 packages in 16ms\n"
+  }
+ ]
+}
