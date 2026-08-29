@@ -59,6 +59,7 @@ class _Handler(BaseHTTPRequestHandler):
         return ""
 
     def log_message(self, format: str, *args: object) -> None:
+        self.server_state.setdefault("requests", []).append(self.command + " " + self.path)
         pass
 
 
@@ -426,6 +427,11 @@ class _DoubleServer:
     @property
     def store(self) -> dict[str, Any]:
         return self._state["store"]
+
+    @property
+    def requests(self) -> list[str]:
+        """Every request line (e.g. "GET /v1/agents") the double has served."""
+        return self._state.setdefault("requests", [])
 
     def start(self) -> None:
         handler_cls = self._handler_cls
