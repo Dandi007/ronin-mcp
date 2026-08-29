@@ -19,6 +19,9 @@ import sys
 import time
 from typing import Any, Callable
 
+from starlette.requests import Request
+from starlette.responses import PlainTextResponse
+
 from ronin_mcp.auth import AuthState, WriteAuthError
 from ronin_mcp.backends.agent_bus import AgentBusClient, BackendError
 from ronin_mcp.backends.dev_dispatch import DevDispatchClient
@@ -83,6 +86,8 @@ def build_mcp_server(
 
     mcp = FastMCP("ronin-mcp", instructions=MCP_INSTRUCTIONS)
 
+    _register_metrics_route(mcp)
+
     auth = AuthState.from_config(config)
 
     backends = config.get("backends", {})
@@ -135,6 +140,23 @@ def build_mcp_server(
     register_work_folder(mcp, auth, work_folder, wrapper)
 
     return mcp
+
+
+def _register_metrics_route(mcp: Any) -> None:
+    """Register a process-local /metrics endpoint (Prometheus text).
+
+    The endpoint is auth-free and never touches any backend/facet: it
+    only reports that this ronin-mcp process is up. It is registered on
+    the FastMCP instance so it appears on the ASGI app produced by
+    ``http_app()`` (and on the production streamable-http app in
+    ``main()``), alongside the unchanged ``/mcp`` and facet routes.
+    """
+    METRICS_BODY = "# TYPE ronin_mcp_up gauge\nronin_mcp_up 1\n"
+    METRICS_MEDIA_TYPE = "text/plain; version=0.0.4; charset=utf-8"
+
+    @mcp.custom_route("/metrics", methods=["GET"], include_in_schema=False)
+    async def _metrics(request: Request) -> PlainTextResponse:
+        return PlainTextResponse(METRICS_BODY, media_type=METRICS_MEDIA_TYPE)
 
 
 def _build_ephemeral_work_folder(ephemeral_runtime: Any) -> Any:
