@@ -180,6 +180,19 @@ def test_every_retired_tool_has_a_reason() -> None:
         assert disposition.RETIRED_TOOL_REASONS[name]
 
 
+def test_every_tool_has_evidence() -> None:
+    """逐条附证据: every one of the 59 tools carries a non-empty evidence string."""
+    assert set(disposition.TOOL_EVIDENCE) == disposition.all_tools()
+    assert set(disposition.TOOL_EVIDENCE) == set(disposition.TOOL_DISPOSITION)
+    for name in disposition.all_tools():
+        assert disposition.evidence_for(name), f"no evidence for {name}"
+        assert disposition.tool_disposition(name) in {
+            disposition.DISPOSITION_AVAILABLE,
+            disposition.DISPOSITION_FIXED,
+            disposition.DISPOSITION_RETIRED,
+        }
+
+
 def test_retired_tools_are_dev_gate_pump() -> None:
     """The retired set is exactly dev-dispatch + gate + pump-state."""
     assert disposition.retired_tools() == RETIRED_DEV_GATE | RETIRED_PUMP

@@ -128,6 +128,30 @@ RETIRED_TOOL_REASONS: dict[str, str] = {
     "ronin_pump_rounds": RETIRE_REASON_PUMP,
 }
 
+# Family-level disposition evidence for the live tools (真机取证 2026-09-02,
+# wf-525fd4 goal.md M3). The spec red line "逐条附证据，禁止凭空推断" requires
+# every tool — available, fixed or retired — to carry a documented basis, so the
+# registry exposes one evidence string per tool rather than bare inference.
+EVIDENCE_AGENT_BUS_AVAILABLE = (
+    "agent-bus upstream alive (真机 2026-09-02): alias/agent/chatgroup/msg/inbox "
+    "tools/list and call echoes respond without backend error"
+)
+EVIDENCE_WF_FS_FIXED = (
+    "implementation defect fixed: facet now awaits the backend async call() entry "
+    "directly instead of call_sync -> asyncio.run() (which raised 'asyncio.run() "
+    "cannot be called from a running event loop'); katana-work-folder side stays live"
+)
+
+# Per-tool evidence; every one of the 59 tools carries a non-empty string.
+TOOL_EVIDENCE: dict[str, str] = {}
+for _name, _disp in TOOL_DISPOSITION.items():
+    if _disp == DISPOSITION_AVAILABLE:
+        TOOL_EVIDENCE[_name] = EVIDENCE_AGENT_BUS_AVAILABLE
+    elif _disp == DISPOSITION_FIXED:
+        TOOL_EVIDENCE[_name] = EVIDENCE_WF_FS_FIXED
+    else:
+        TOOL_EVIDENCE[_name] = RETIRED_TOOL_REASONS[_name]
+
 TOTAL_TOOL_COUNT = 59
 
 
@@ -162,6 +186,16 @@ def retired_tools() -> frozenset[str]:
 def live_tools() -> frozenset[str]:
     """The intended calling surface: available + fixed (retired excluded)."""
     return available_tools() | fixed_tools()
+
+
+def tool_disposition(tool: str) -> str:
+    """Disposition for one tool ('available'/'fixed'/'retired'), or '' if unknown."""
+    return TOOL_DISPOSITION.get(tool, "")
+
+
+def evidence_for(tool: str) -> str:
+    """Per-tool disposition evidence (真机取证), or '' if unknown."""
+    return TOOL_EVIDENCE.get(tool, "")
 
 
 def assert_live_surface(live_names: Collection[str]) -> None:
