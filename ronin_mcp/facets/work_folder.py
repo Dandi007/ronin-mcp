@@ -7,9 +7,13 @@ folder_id (or topic for wf_create).
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from fastmcp.exceptions import ToolError
+
 from ronin_mcp.auth import AuthState, check_write_auth
+from ronin_mcp.backends.agent_bus import BackendError
 from ronin_mcp.backends.work_folder import WorkFolderClient
 
 
@@ -391,11 +395,31 @@ def register(
 
 
 async def _wrap(
-    work_folder: WorkFolderClient,
+    work_folder: Any,
     error_wrapper: Any,
     tool_name: str,
     arguments: dict[str, Any],
 ) -> Any:
+    """Forward one tool call to the work-folder backend.
+
+    The real ``WorkFolderClient`` exposes a native async ``call`` entry; we
+    await it directly. Calling ``asyncio.run()`` (the old ``call_sync`` path)
+    from inside FastMCP's event loop raised
+    "asyncio.run() cannot be called from a running event loop", which broke
+    every wf/fs tool. Sync-only doubles (the conftest ``FakeWorkFolderClient``
+    and the ephemeral ``TempDirWorkFolderClient``) fall back to ``call_sync``.
+
+    Backend failures are re-raised as ``ToolError`` carrying the canonical
+    ``{code, message, details: {retryable}}`` envelope, matching the sync
+    ``error_wrapper`` path.
+    """
+    call = getattr(work_folder, "call", None)
+    if call is not None:
+        try:
+            return await call(tool_name, arguments)
+        except BackendError as exc:
+            raise ToolError(json.dumps(exc.envelope, ensure_ascii=False)) from exc
+
     def _call() -> Any:
         return work_folder.call_sync(tool_name, arguments)
 

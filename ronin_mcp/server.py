@@ -24,8 +24,6 @@ from starlette.responses import PlainTextResponse
 
 from ronin_mcp.auth import AuthState, WriteAuthError
 from ronin_mcp.backends.agent_bus import AgentBusClient, BackendError
-from ronin_mcp.backends.dev_dispatch import DevDispatchClient
-from ronin_mcp.backends.pump_state import PumpStateClient
 from ronin_mcp.backends.work_folder import WorkFolderClient
 from ronin_mcp.config import load_config, resolve_gateway_token
 
@@ -55,13 +53,19 @@ def build_mcp_server(
     config: dict[str, Any],
     *,
     bus_client: AgentBusClient | None = None,
-    controller_client: DevDispatchClient | None = None,
+    controller_client: Any | None = None,
     work_folder_client: WorkFolderClient | None = None,
-    pump_client: PumpStateClient | None = None,
+    pump_client: Any | None = None,
     error_wrapper: Callable[[Callable[[], Any]], Any] | None = None,
     ephemeral_runtime: Any = None,
 ) -> Any:
-    """Build a FastMCP server with all seven facets registered.
+    """Build a FastMCP server with the live facets registered.
+
+    M3 disposition (see ``ronin_mcp.disposition``): the dev-dispatch, gate
+    and pump-state facets are RETIRED because their upstream backends are
+    dead, so they are deliberately NOT registered on the calling surface.
+    ``controller_client`` / ``pump_client`` are accepted for backwards
+    compatibility with the test harness but are ignored.
 
     Client injection is optional so tests can substitute doubles. When a
     client is None, build_mcp_server constructs the production client
@@ -92,9 +96,7 @@ def build_mcp_server(
 
     backends = config.get("backends", {})
     bus_cfg = backends.get("agent_bus", {})
-    dd_cfg = backends.get("dev_dispatch", {})
     wf_cfg = backends.get("work_folder", {})
-    pump_cfg = backends.get("pump_state", {})
 
     if auth.ephemeral and ephemeral_runtime is not None:
         # Spec 判据 1 rule 1: route ALL writes to --ephemeral backends.
@@ -102,42 +104,33 @@ def build_mcp_server(
             ephemeral_runtime.bus_url,
             gateway_token=ephemeral_runtime.bus_gateway_token,
         )
-        controller = controller_client or DevDispatchClient(
-            ephemeral_runtime.controller_url,
-        )
         work_folder = work_folder_client or _build_ephemeral_work_folder(ephemeral_runtime)
     else:
         bus = bus_client or AgentBusClient(
             bus_cfg.get("url", "http://127.0.0.1:7490"),
             gateway_token=resolve_gateway_token(config),
         )
-        controller = controller_client or DevDispatchClient(
-            dd_cfg.get("url", "http://127.0.0.1:7460"),
-        )
         work_folder = work_folder_client or WorkFolderClient(
             wf_cfg.get("mcp_url", "http://127.0.0.1:5605/mcp"),
         )
-    pump = pump_client or PumpStateClient(
-        pump_cfg.get("runs_root", "/data/ronin/runs"),
-    )
 
     wrapper = error_wrapper or _make_error_wrapper(ToolError)
 
     from ronin_mcp.facets.alias import register as register_alias
     from ronin_mcp.facets.chatgroup import register as register_chatgroup
-    from ronin_mcp.facets.development import register as register_development
-    from ronin_mcp.facets.gate import register as register_gate
     from ronin_mcp.facets.messaging import register as register_messaging
-    from ronin_mcp.facets.pump import register as register_pump
     from ronin_mcp.facets.work_folder import register as register_work_folder
 
     register_alias(mcp, auth, bus, wrapper)
     register_chatgroup(mcp, auth, bus, wrapper)
     register_messaging(mcp, auth, bus, wrapper)
-    register_development(mcp, auth, controller, wrapper)
-    register_gate(mcp, auth, controller, wrapper)
-    register_pump(mcp, pump, wrapper)
     register_work_folder(mcp, auth, work_folder, wrapper)
+
+    # M3 disposition (retire, not pretend): dev-dispatch / gate / pump-store
+    # facets are RETIRED because their upstream backends are gone. They are
+    # intentionally NOT registered above; the authoritative classification is
+    # ``ronin_mcp.disposition.retired_tools()``. Re-adding one of those calls
+    # makes ``tests/test_m3_roninmcp_disposition.py`` go red (assert_live_surface).
 
     return mcp
 

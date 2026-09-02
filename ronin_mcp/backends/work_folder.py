@@ -16,7 +16,6 @@ when the MCP returned an error payload.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import httpx
@@ -79,10 +78,6 @@ class WorkFolderClient:
                 retryable=False,
             ) from exc
         return _extract_content(result)
-
-    def call_sync(self, tool_name: str, arguments: dict[str, Any]) -> Any:
-        """Synchronous wrapper for use from non-async facets."""
-        return asyncio.run(self.call(tool_name, arguments))
 
 
 def _extract_content(result: Any) -> Any:
