@@ -1,0 +1,20 @@
+{
+ "development_id": "dev-fg-cd44b133614e",
+ "generation": 1,
+ "acceptance_commands": [
+  [
+   "uv",
+   "sync",
+   "--frozen"
+  ],
+  [
+   "uv",
+   "run",
+   "pytest",
+   "-q",
+   "tests/test_m3_roninmcp_disposition.py"
+  ]
+ ],
+ "setup_commands": [],
+ "acceptance_env": {}
+}
