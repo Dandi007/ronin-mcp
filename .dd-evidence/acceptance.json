@@ -1,0 +1,28 @@
+{
+ "development_id": "dev-fg-8f55d4d3aa27",
+ "attempt": 2,
+ "passed": true,
+ "results": [
+  {
+   "command": [
+    "uv",
+    "sync",
+    "--frozen"
+   ],
+   "exit_code": 0,
+   "stdout_tail": "",
+   "stderr_tail": "Checked 69 packages in 0.62ms\n"
+  },
+  {
+   "command": [
+    "uv",
+    "run",
+    "pytest",
+    "-q"
+   ],
+   "exit_code": 0,
+   "stdout_tail": ".py:216: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.timeout(30)\n\ntests/test_work_folder.py:228\n  /data/worktrees/ronin-mcp-only-m3-rework-20260903/tests/test_work_folder.py:228: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.timeout(30)\n\ntests/test_work_folder.py:237\n  /data/worktrees/ronin-mcp-only-m3-rework-20260903/tests/test_work_folder.py:237: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.timeout(30)\n\ntests/test_work_folder.py:248\n  /data/worktrees/ronin-mcp-only-m3-rework-20260903/tests/test_work_folder.py:248: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.timeout(30)\n\ntests/test_work_folder.py:260\n  /data/worktrees/ronin-mcp-only-m3-rework-20260903/tests/test_work_folder.py:260: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.timeout(30)\n\ntests/test_metrics.py::test_metrics_endpoint_200_and_body\n  /data/worktrees/ronin-mcp-only-m3-rework-20260903/tests/test_metrics.py:25: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n107 passed, 109 warnings in 93.01s (0:01:33)\n",
+   "stderr_tail": ""
+  }
+ ]
+}
