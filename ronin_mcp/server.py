@@ -28,6 +28,7 @@ from ronin_mcp.backends.dev_dispatch import DevDispatchClient
 from ronin_mcp.backends.pump_state import PumpStateClient
 from ronin_mcp.backends.work_folder import WorkFolderClient
 from ronin_mcp.config import load_config, resolve_gateway_token
+from ronin_mcp.disposition import ToolRetiredError
 
 MCP_INSTRUCTIONS = """Ronin MCP - aggregating facade for the ronin fleet control plane.
 
@@ -122,6 +123,7 @@ def build_mcp_server(
     )
 
     wrapper = error_wrapper or _make_error_wrapper(ToolError)
+    async_wrapper = _make_async_error_wrapper(ToolError)
 
     from ronin_mcp.facets.alias import register as register_alias
     from ronin_mcp.facets.chatgroup import register as register_chatgroup
@@ -137,7 +139,7 @@ def build_mcp_server(
     register_development(mcp, auth, controller, wrapper)
     register_gate(mcp, auth, controller, wrapper)
     register_pump(mcp, pump, wrapper)
-    register_work_folder(mcp, auth, work_folder, wrapper)
+    register_work_folder(mcp, auth, work_folder, async_wrapper)
 
     return mcp
 
@@ -181,6 +183,8 @@ def _make_error_wrapper(tool_error_cls: type) -> Callable[[Callable[[], Any]], A
         WriteAuthError  -> {"code": "PROD_WRITE_NOT_AUTHORIZED", ...}
         BackendError    -> {"code": "BACKEND_ERROR" | "BACKEND_UNAVAILABLE",
                             "message": ..., "details": {"retryable": bool}}
+        ToolRetiredError -> {"code": "RETIRED",
+                             "message": ..., "details": {"retryable": False}}
     """
 
     def _wrapper(fn: Callable[[], Any]) -> Any:
@@ -191,6 +195,38 @@ def _make_error_wrapper(tool_error_cls: type) -> Callable[[Callable[[], Any]], A
                 json.dumps(exc.payload, ensure_ascii=False)
             ) from exc
         except BackendError as exc:
+            raise tool_error_cls(
+                json.dumps(exc.envelope, ensure_ascii=False)
+            ) from exc
+        except ToolRetiredError as exc:
+            raise tool_error_cls(
+                json.dumps(exc.envelope, ensure_ascii=False)
+            ) from exc
+
+    return _wrapper
+
+
+def _make_async_error_wrapper(tool_error_cls: type) -> Callable[[Callable[[], Any]], Any]:
+    """Async analogue of ``_make_error_wrapper``.
+
+    The work-folder facet tools are ``async def`` and call the backend's
+    async ``call()`` entry directly. This wrapper awaits the given
+    coroutine producer and converts the same exception shapes (auth /
+    backend / retired) into the canonical structured ToolError envelope.
+    """
+
+    async def _wrapper(fn: Callable[[], Any]) -> Any:
+        try:
+            return await fn()
+        except WriteAuthError as exc:
+            raise tool_error_cls(
+                json.dumps(exc.payload, ensure_ascii=False)
+            ) from exc
+        except BackendError as exc:
+            raise tool_error_cls(
+                json.dumps(exc.envelope, ensure_ascii=False)
+            ) from exc
+        except ToolRetiredError as exc:
             raise tool_error_cls(
                 json.dumps(exc.envelope, ensure_ascii=False)
             ) from exc

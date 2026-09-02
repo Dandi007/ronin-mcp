@@ -396,7 +396,7 @@ async def _wrap(
     tool_name: str,
     arguments: dict[str, Any],
 ) -> Any:
-    def _call() -> Any:
-        return work_folder.call_sync(tool_name, arguments)
+    async def _call() -> Any:
+        return await work_folder.call(tool_name, arguments)
 
-    return error_wrapper(_call)
+    return await error_wrapper(_call)

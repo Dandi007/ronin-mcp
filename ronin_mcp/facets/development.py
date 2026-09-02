@@ -1,16 +1,21 @@
 """Development (dd dispatch) facet.
 
-Wraps the loop-engine Controller development endpoints under
-ronin_dev_*. ronin_dev_create targeting a production repo requires
-RONIN_PROD_WRITE=1; gd:-prefixed names are allowed for test developments.
+This facet is retired. The tools stay registered (visible and callable
+in ``tools/list``) but every invocation is refused with an explicit,
+structured ``RETIRED`` rejection (see ``ronin_mcp.disposition``). The dd
+dispatch lifecycle is no longer owned by ronin-mcp; retiring it quietly
+by dropping the tools would leave callers hitting ``Unknown tool``, and
+keeping the backend path would leave it failing like an operational
+fault — neither is acceptable, so the entrance returns ``RETIRED``.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from ronin_mcp.auth import AuthState, check_write_auth
+from ronin_mcp.auth import AuthState
 from ronin_mcp.backends.dev_dispatch import DevDispatchClient
+from ronin_mcp.disposition import retire
 
 
 def register(
@@ -19,7 +24,11 @@ def register(
     controller: DevDispatchClient,
     error_wrapper: Any,
 ) -> None:
-    """Register ronin_dev_* tools on the FastMCP server."""
+    """Register the (retired) ronin_dev_* tools on the FastMCP server.
+
+    Registration is preserved so the tools remain visible; invocation
+    returns a structured ``RETIRED`` rejection.
+    """
 
     @mcp.tool()
     def ronin_dev_list(
@@ -28,20 +37,13 @@ def register(
         limit: int = 20,
         cursor: str | None = None,
     ) -> dict[str, Any]:
-        """List developments (read)."""
-        params: dict[str, Any] = {"limit": limit}
-        if state:
-            params["state"] = state
-        if repo:
-            params["repo"] = repo
-        if cursor:
-            params["cursor"] = cursor
-        return error_wrapper(lambda: controller.get("/v1/developments", params=params))
+        """List developments (read) — retired."""
+        return error_wrapper(lambda: retire("ronin_dev_list"))
 
     @mcp.tool()
     def ronin_dev_get(development_id: str) -> dict[str, Any]:
-        """Get a development's full state (read)."""
-        return error_wrapper(lambda: controller.get(f"/v1/developments/{development_id}"))
+        """Get a development's full state (read) — retired."""
+        return error_wrapper(lambda: retire("ronin_dev_get"))
 
     @mcp.tool()
     def ronin_dev_events(
@@ -49,20 +51,13 @@ def register(
         after: str | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
-        """Get development events (read; incremental polling)."""
-        params: dict[str, Any] = {"limit": limit}
-        if after:
-            params["after"] = after
-        return error_wrapper(
-            lambda: controller.get(f"/v1/developments/{development_id}/events", params=params)
-        )
+        """Get development events (read; incremental polling) — retired."""
+        return error_wrapper(lambda: retire("ronin_dev_events"))
 
     @mcp.tool()
     def ronin_dev_evidence(development_id: str) -> dict[str, Any]:
-        """Export the receipt/evidence chain (read)."""
-        return error_wrapper(
-            lambda: controller.get(f"/v1/developments/{development_id}/evidence")
-        )
+        """Export the receipt/evidence chain (read) — retired."""
+        return error_wrapper(lambda: retire("ronin_dev_evidence"))
 
     @mcp.tool()
     def ronin_dev_create(
@@ -83,38 +78,8 @@ def register(
         max_attempts: int | None = None,
         as_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        """Create a attempt-context v1 development (write).
-
-        gd:-prefixed names are test developments and may proceed without
-        RONIN_PROD_WRITE=1; production developments require it.
-        """
-        def _do() -> dict[str, Any]:
-            check_write_auth(auth, name)
-            body: dict[str, Any] = {
-                "name": name,
-                "goal": goal,
-                "phase": phase,
-                "profile": profile,
-                "policy": policy,
-                "idempotency_key": idempotency_key,
-                "reason": reason,
-                "initial_handoff": initial_handoff,
-                "auto_start": auto_start,
-            }
-            if max_attempts is not None:
-                body["max_attempts"] = max_attempts
-            if acceptance_commands is not None:
-                body["acceptance_commands"] = acceptance_commands
-            if setup_commands is not None:
-                body["setup_commands"] = setup_commands
-            if host_verify_commands is not None:
-                body["host_verify_commands"] = host_verify_commands
-            if work_folder:
-                body["work_folder"] = work_folder
-            if role_target_patch is not None:
-                body["role_target_patch"] = role_target_patch
-            return controller.post("/v1/developments", body, as_agent_id=as_agent_id)
-        return error_wrapper(_do)
+        """Create a attempt-context v1 development (write) — retired."""
+        return error_wrapper(lambda: retire("ronin_dev_create"))
 
     @mcp.tool()
     def ronin_dev_start(
@@ -124,19 +89,8 @@ def register(
         reason: str = "",
         as_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        """Start a BOOTSTRAPPING development (write)."""
-        def _do() -> dict[str, Any]:
-            check_write_auth(auth, development_id)
-            return controller.post(
-                f"/v1/developments/{development_id}/commands/start",
-                {
-                    "idempotency_key": idempotency_key,
-                    "expected_revision": expected_revision,
-                    "reason": reason,
-                },
-                as_agent_id=as_agent_id,
-            )
-        return error_wrapper(_do)
+        """Start a BOOTSTRAPPING development (write) — retired."""
+        return error_wrapper(lambda: retire("ronin_dev_start"))
 
     @mcp.tool()
     def ronin_dev_steer(
@@ -148,21 +102,8 @@ def register(
         urgency: str = "next_safe_boundary",
         as_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        """Steer a development (write; effective at next safe boundary)."""
-        def _do() -> dict[str, Any]:
-            check_write_auth(auth, development_id)
-            return controller.post(
-                f"/v1/developments/{development_id}/commands/steer",
-                {
-                    "idempotency_key": idempotency_key,
-                    "expected_revision": expected_revision,
-                    "reason": reason,
-                    "instruction": instruction,
-                    "urgency": urgency,
-                },
-                as_agent_id=as_agent_id,
-            )
-        return error_wrapper(_do)
+        """Steer a development (write) — retired."""
+        return error_wrapper(lambda: retire("ronin_dev_steer"))
 
     @mcp.tool()
     def ronin_dev_reconfigure(
@@ -177,30 +118,8 @@ def register(
         setup_commands: list[dict[str, Any]] | None = None,
         as_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        """Reconfigure a development (write)."""
-        def _do() -> dict[str, Any]:
-            check_write_auth(auth, development_id)
-            body: dict[str, Any] = {
-                "idempotency_key": idempotency_key,
-                "expected_revision": expected_revision,
-                "reason": reason,
-            }
-            if profile:
-                body["profile"] = profile
-            if role_target_patch:
-                body["role_target_patch"] = role_target_patch
-            if policy:
-                body["policy"] = policy
-            if acceptance_commands is not None:
-                body["acceptance_commands"] = acceptance_commands
-            if setup_commands is not None:
-                body["setup_commands"] = setup_commands
-            return controller.post(
-                f"/v1/developments/{development_id}/commands/reconfigure",
-                body,
-                as_agent_id=as_agent_id,
-            )
-        return error_wrapper(_do)
+        """Reconfigure a development (write) — retired."""
+        return error_wrapper(lambda: retire("ronin_dev_reconfigure"))
 
     @mcp.tool()
     def ronin_dev_control(
@@ -211,20 +130,8 @@ def register(
         reason: str = "",
         as_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        """Pause / resume / cancel a development (write)."""
-        def _do() -> dict[str, Any]:
-            check_write_auth(auth, development_id)
-            return controller.post(
-                f"/v1/developments/{development_id}/commands/control",
-                {
-                    "idempotency_key": idempotency_key,
-                    "expected_revision": expected_revision,
-                    "reason": reason,
-                    "action": action,
-                },
-                as_agent_id=as_agent_id,
-            )
-        return error_wrapper(_do)
+        """Pause / resume / cancel a development (write) — retired."""
+        return error_wrapper(lambda: retire("ronin_dev_control"))
 
     @mcp.tool()
     def ronin_dev_relock(
@@ -235,17 +142,5 @@ def register(
         reason: str = "",
         as_agent_id: str | None = None,
     ) -> dict[str, Any]:
-        """Relock a development to a new plugin commit (write)."""
-        def _do() -> dict[str, Any]:
-            check_write_auth(auth, development_id)
-            return controller.post(
-                f"/v1/developments/{development_id}/commands/relock",
-                {
-                    "idempotency_key": idempotency_key,
-                    "expected_revision": expected_revision,
-                    "reason": reason,
-                    "plugin_commit": plugin_commit,
-                },
-                as_agent_id=as_agent_id,
-            )
-        return error_wrapper(_do)
+        """Relock a development to a new plugin commit (write) — retired."""
+        return error_wrapper(lambda: retire("ronin_dev_relock"))

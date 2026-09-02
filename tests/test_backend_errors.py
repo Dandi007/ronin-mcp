@@ -206,10 +206,15 @@ def test_backend_4xx_is_BACKEND_ERROR_not_retryable() -> None:
 
 
 @pytest.mark.timeout(30)
-def test_backend_unavailable_controller_surfaces_as_BACKEND_UNAVAILABLE(
+def test_retired_dev_list_returns_retired_not_backend_fault(
     mcp_server_factory: Any, make_config: Any
 ) -> None:
-    """An unreachable Controller surfaces as BACKEND_UNAVAILABLE."""
+    """ronin_dev_list is retired and returns RETIRED, not a backend fault.
+
+    Even with an unreachable Controller wired in, the retirement guard
+    runs first and returns a structured RETIRED rejection (never
+    BACKEND_UNAVAILABLE / Connection refused).
+    """
     from ronin_mcp.backends.dev_dispatch import DevDispatchClient
     from ronin_mcp.server import build_mcp_server
 
@@ -227,8 +232,8 @@ def test_backend_unavailable_controller_surfaces_as_BACKEND_UNAVAILABLE(
             with pytest.raises(ToolError) as exc:
                 await client.call_tool("ronin_dev_list", {})
             env = _error_envelope(exc.value)
-            assert env["code"] == "BACKEND_UNAVAILABLE"
-            assert env["details"]["retryable"] is True
+            assert env["code"] == "RETIRED"
+            assert env["details"]["retryable"] is False
 
     asyncio.run(_run())
 

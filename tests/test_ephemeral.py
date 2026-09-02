@@ -20,6 +20,7 @@ from typing import Any
 
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 
 def _extract_text(result: Any) -> str:
@@ -70,25 +71,31 @@ def test_ephemeral_routes_writes_to_ephemeral_bus_not_configured_url(
 def test_ephemeral_routes_dd_writes_to_ephemeral_controller(
     ephemeral_server_factory: Any,
     make_config: Any,
-    controller_double: Any,
 ) -> None:
-    """A dd write in ephemeral mode lands in the ephemeral Controller double."""
+    """dd dispatch is retired: ronin_dev_create returns RETIRED in ephemeral mode.
+
+    The retirement guard runs before any backend routing, so no
+    Controller HTTP request (ephemeral or production) is issued and the
+    caller receives an explicit RETIRED rejection, not a routing write.
+    """
     config = make_config(ephemeral=True)
     config["backends"]["dev_dispatch"]["url"] = "http://127.0.0.1:1"
 
     server, rt = ephemeral_server_factory(config)
 
-    data = _call(server, "ronin_dev_create", {
-        "name": "gd:ephemeral-dev",
-        "goal": "ephemeral",
-        "idempotency_key": "ik-ephemeral-dev",
-        "reason": "testing ephemeral routing",
-        "initial_handoff": {},
-    })
-    assert data["name"] == "gd:ephemeral-dev"
+    async def _run() -> None:
+        async with Client(server) as client:
+            with pytest.raises(ToolError) as exc:
+                await client.call_tool("ronin_dev_create", {
+                    "name": "gd:ephemeral-dev",
+                    "goal": "ephemeral",
+                    "idempotency_key": "ik-ephemeral-dev",
+                    "reason": "testing ephemeral routing",
+                    "initial_handoff": {},
+                })
+            assert "RETIRED" in str(exc.value)
 
-    # The write landed in the ephemeral Controller double's store.
-    assert "gd:ephemeral-dev" in controller_double.store["developments"]
+    asyncio.run(_run())
     rt.close()
 
 
