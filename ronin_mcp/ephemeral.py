@@ -330,7 +330,7 @@ class TempDirWorkFolderClient:
     """Work-folder client backed by a temp directory.
 
     Used in ephemeral mode so work-folder writes never reach the
-    production katana-work-folder MCP. Implements the ``call_sync``
+    production katana-work-folder MCP. Implements the async ``call``
     interface the facets expect, operating on a local temp dir. The
     implementation is intentionally minimal but functional: file writes
     land on disk under ``<root>/<folder_id>/<filename>`` so callers can
@@ -345,7 +345,7 @@ class TempDirWorkFolderClient:
     def root(self) -> str:
         return self._root
 
-    def call_sync(self, tool_name: str, arguments: dict[str, Any]) -> Any:
+    async def call(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         handler = _WF_TOOLS.get(tool_name)
         if handler is None:
             return {"tool": tool_name, "arguments": arguments, "ok": True}

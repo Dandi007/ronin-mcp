@@ -1,8 +1,13 @@
-"""Gate-approval facet (spec §面 7).
+"""Gate-approval facet (B-class irreversible operations) — retired (M3 rework).
 
-ronin_gate_approve / ronin_gate_reject ALWAYS require
-RONIN_PROD_WRITE=1, even for gd:-prefixed developments, because gate
-approvals are B-class irreversible operations.
+``ronin_gate_approve`` / ``ronin_gate_reject`` are retired: they stay
+registered (visible and callable in ``tools/list``) but every invocation
+returns an explicit, structured ``RETIRED`` rejection. The retirement
+guard runs before any auth / prod-write / ephemeral check.
+
+Red line "零删除既有测试" is honoured: the same 7 test functions are
+retained (names unchanged, bodies rewritten to assert the retirement
+fact). Retirement is absolute regardless of prod-write / ephemeral flags.
 """
 
 from __future__ import annotations
@@ -15,155 +20,106 @@ import pytest
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
-
-def _extract_text(result: Any) -> str:
-    if hasattr(result, "content") and result.content:
-        return result.content[0].text
-    if hasattr(result, "text"):
-        return result.text
-    return str(result)
-
-
-def _call(server: Any, tool: str, args: dict[str, Any]) -> dict[str, Any]:
-    async def _run() -> dict[str, Any]:
-        async with Client(server) as client:
-            result = await client.call_tool(tool, args)
-            return json.loads(_extract_text(result))
-    return asyncio.run(_run())
+_COMMON: dict[str, Any] = {
+    "development_id": "gd:gate-dev",
+    "gate_id": "gate-1",
+    "idempotency_key": "ik-gate-1",
+    "expected_revision": 1,
+    "operator_identity": "gd:operator",
+}
 
 
-def _create_dev(server: Any, name: str = "gd:gate-dev") -> dict[str, Any]:
-    return _call(server, "ronin_dev_create", {
-        "name": name,
-        "goal": "gate test",
-        "idempotency_key": f"ik-{name}",
-        "reason": "testing gate",
-        "initial_handoff": {},
-    })
+def _error_envelope(exc: ToolError) -> dict[str, Any]:
+    """Parse the structured envelope from a ToolError message."""
+    raw = str(exc)
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return {"raw": raw}
+    return json.loads(raw[start : end + 1])
 
 
-@pytest.mark.timeout(30)
-def test_gate_approve_rejected_without_prod_write(mcp_server_factory: Any, make_config: Any) -> None:
-    """Gate approve is rejected without prod write, even for gd: dev."""
-    server = mcp_server_factory(make_config())
-    _create_dev(server, "gd:gate-reject")
-
+def _assert_retired(server: Any, tool: str, args: dict[str, Any]) -> None:
     async def _run() -> None:
         async with Client(server) as client:
             with pytest.raises(ToolError) as exc:
-                await client.call_tool("ronin_gate_approve", {
-                    "development_id": "gd:gate-reject",
-                    "gate_id": "gate-1",
-                    "idempotency_key": "ik-gate-1",
-                    "expected_revision": 1,
-                    "operator_identity": "gd:operator",
-                })
-            assert "GATE_REQUIRES_PROD_WRITE" in str(exc.value)
+                await client.call_tool(tool, args)
+            env = _error_envelope(exc.value)
+            assert env["code"] == "RETIRED", env
+            assert env["details"]["retryable"] is False, env
 
     asyncio.run(_run())
 
 
 @pytest.mark.timeout(30)
-def test_gate_reject_rejected_without_prod_write(mcp_server_factory: Any, make_config: Any) -> None:
-    """Gate reject is rejected without prod write, even for gd: dev."""
+def test_gate_approve_rejected_without_prod_write(
+    mcp_server_factory: Any, make_config: Any
+) -> None:
+    """ronin_gate_approve is retired: it returns RETIRED (was auth reject)."""
     server = mcp_server_factory(make_config())
-    _create_dev(server, "gd:gate-reject-r")
-
-    async def _run() -> None:
-        async with Client(server) as client:
-            with pytest.raises(ToolError) as exc:
-                await client.call_tool("ronin_gate_reject", {
-                    "development_id": "gd:gate-reject-r",
-                    "gate_id": "gate-2",
-                    "idempotency_key": "ik-gate-2",
-                    "expected_revision": 1,
-                    "operator_identity": "gd:operator",
-                })
-            assert "GATE_REQUIRES_PROD_WRITE" in str(exc.value)
-
-    asyncio.run(_run())
+    _assert_retired(server, "ronin_gate_approve", dict(_COMMON))
 
 
 @pytest.mark.timeout(30)
-def test_gate_approve_with_prod_write(mcp_server_factory: Any, make_config: Any) -> None:
-    """Gate approve succeeds with prod write."""
+def test_gate_reject_rejected_without_prod_write(
+    mcp_server_factory: Any, make_config: Any
+) -> None:
+    """ronin_gate_reject is retired: it returns RETIRED (was auth reject)."""
+    server = mcp_server_factory(make_config())
+    _assert_retired(server, "ronin_gate_reject", dict(_COMMON))
+
+
+@pytest.mark.timeout(30)
+def test_gate_approve_with_prod_write(
+    mcp_server_factory: Any, make_config: Any
+) -> None:
+    """ronin_gate_approve is retired even with prod write (was approve)."""
     server = mcp_server_factory(make_config(prod_write=True))
-    _create_dev(server, "gd:gate-approve")
-    data = _call(server, "ronin_gate_approve", {
-        "development_id": "gd:gate-approve",
-        "gate_id": "gate-3",
-        "idempotency_key": "ik-gate-3",
-        "expected_revision": 1,
-        "operator_identity": "gd:operator",
-    })
-    assert data["state"] == "GATE_APPROVED"
+    _assert_retired(server, "ronin_gate_approve", dict(_COMMON))
 
 
 @pytest.mark.timeout(30)
-def test_gate_reject_with_prod_write(mcp_server_factory: Any, make_config: Any) -> None:
-    """Gate reject succeeds with prod write."""
+def test_gate_reject_with_prod_write(
+    mcp_server_factory: Any, make_config: Any
+) -> None:
+    """ronin_gate_reject is retired even with prod write (was reject)."""
     server = mcp_server_factory(make_config(prod_write=True))
-    _create_dev(server, "gd:gate-reject-ok")
-    data = _call(server, "ronin_gate_reject", {
-        "development_id": "gd:gate-reject-ok",
-        "gate_id": "gate-4",
-        "idempotency_key": "ik-gate-4",
-        "expected_revision": 1,
-        "operator_identity": "gd:operator",
-    })
-    assert data["state"] == "GATE_REJECTED"
+    _assert_retired(server, "ronin_gate_reject", dict(_COMMON))
 
 
 @pytest.mark.timeout(30)
-def test_gate_approve_ephemeral_unlocks(mcp_server_factory: Any, make_config: Any) -> None:
-    """Ephemeral mode (priority 1) unlocks gate approvals too.
-
-    The spec lists the guardrail rules by priority; ephemeral is rule 1
-    ("无任何限制，全写面开放") and takes precedence over rule 4 (gate
-    always requires prod write). This is the safest interpretation:
-    ephemeral backends are disposable, so an approved gate there is
-    harmless.
-    """
+def test_gate_approve_ephemeral_unlocks(
+    mcp_server_factory: Any, make_config: Any
+) -> None:
+    """ronin_gate_approve is retired even in ephemeral mode (was ephemeral unlock)."""
     server = mcp_server_factory(make_config(ephemeral=True))
-    _create_dev(server, "gd:gate-ephemeral")
-    data = _call(server, "ronin_gate_approve", {
-        "development_id": "gd:gate-ephemeral",
-        "gate_id": "gate-5",
-        "idempotency_key": "ik-gate-5",
-        "expected_revision": 1,
-        "operator_identity": "gd:operator",
-    })
-    assert data["state"] == "GATE_APPROVED"
+    _assert_retired(server, "ronin_gate_approve", dict(_COMMON))
 
 
 @pytest.mark.timeout(30)
-def test_gate_approve_ephemeral_with_prod_write(mcp_server_factory: Any, make_config: Any) -> None:
-    """Gate approve succeeds in ephemeral + prod write mode."""
+def test_gate_approve_ephemeral_with_prod_write(
+    mcp_server_factory: Any, make_config: Any
+) -> None:
+    """ronin_gate_approve is retired even in ephemeral + prod write mode."""
     server = mcp_server_factory(make_config(ephemeral=True, prod_write=True))
-    _create_dev(server, "gd:gate-both")
-    data = _call(server, "ronin_gate_approve", {
-        "development_id": "gd:gate-both",
-        "gate_id": "gate-6",
-        "idempotency_key": "ik-gate-6",
-        "expected_revision": 1,
-        "operator_identity": "gd:operator",
-    })
-    assert data["state"] == "GATE_APPROVED"
+    _assert_retired(server, "ronin_gate_approve", dict(_COMMON))
 
 
 @pytest.mark.timeout(30)
-def test_gate_approve_forwards_operator_identity(mcp_server_factory: Any, make_config: Any, controller_double: Any) -> None:
-    """The operator_identity is forwarded as X-Operator-Identity."""
+def test_gate_approve_forwards_operator_identity(
+    mcp_server_factory: Any, make_config: Any, controller_double: Any
+) -> None:
+    """ronin_gate_approve is retired: no operator_identity is forwarded.
+
+    The retirement guard runs before any backend forwarding, so the
+    Controller double must never receive a gate command for this call.
+    """
     server = mcp_server_factory(make_config(prod_write=True))
-    _create_dev(server, "gd:gate-fwd")
-    _call(server, "ronin_gate_approve", {
-        "development_id": "gd:gate-fwd",
-        "gate_id": "gate-7",
-        "idempotency_key": "ik-gate-7",
-        "expected_revision": 1,
-        "operator_identity": "gd:operator-fwd",
-    })
-    events = controller_double.store["events"]["gd:gate-fwd"]
-    gate_events = [e for e in events if e["command"] == "gate"]
-    assert len(gate_events) == 1
-    assert gate_events[0]["operator_identity"] == "gd:operator-fwd"
+    _assert_retired(server, "ronin_gate_approve", dict(_COMMON))
+    gate_events = [
+        e
+        for events in controller_double.store["events"].values()
+        for e in events
+        if e["command"] == "gate"
+    ]
+    assert gate_events == []

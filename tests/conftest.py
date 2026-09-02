@@ -74,7 +74,7 @@ class FakeWorkFolderClient:
     def set_response(self, tool_name: str, response: Any) -> None:
         self._responses[tool_name] = response
 
-    def call_sync(self, tool_name: str, arguments: dict[str, Any]) -> Any:
+    async def call(self, tool_name: str, arguments: dict[str, Any]) -> Any:
         self.calls.append((tool_name, dict(arguments)))
         if tool_name in self._responses:
             return self._responses[tool_name]
