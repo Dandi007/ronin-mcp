@@ -1,0 +1,29 @@
+{
+ "development_id": "dev-fg-cd44b133614e",
+ "attempt": 1,
+ "passed": true,
+ "results": [
+  {
+   "command": [
+    "uv",
+    "sync",
+    "--frozen"
+   ],
+   "exit_code": 0,
+   "stdout_tail": "",
+   "stderr_tail": "Checked 69 packages in 0.72ms\n"
+  },
+  {
+   "command": [
+    "uv",
+    "run",
+    "pytest",
+    "-q",
+    "tests/test_m3_roninmcp_disposition.py"
+   ],
+   "exit_code": 0,
+   "stdout_tail": "............                                                             [100%]\n=============================== warnings summary ===============================\n../../../home/uther/.local/lib/python3.14/site-packages/_pytest/config/__init__.py:1464\n  /home/uther/.local/lib/python3.14/site-packages/_pytest/config/__init__.py:1464: PytestConfigWarning: Unknown config option: timeout\n  \n    self._warn_or_fail_if_strict(f\"Unknown config option: {key}\\n\")\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n12 passed, 1 warning in 1.35s\n",
+   "stderr_tail": ""
+  }
+ ]
+}
