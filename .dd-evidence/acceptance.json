@@ -1,0 +1,28 @@
+{
+ "development_id": "dev-fg-bc84c2315a75",
+ "attempt": 1,
+ "passed": true,
+ "results": [
+  {
+   "command": [
+    "python",
+    "-m",
+    "pytest",
+    "-q"
+   ],
+   "exit_code": 0,
+   "stdout_tail": ":216: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.timeout(30)\n\ntests/test_work_folder.py:228\n  /data/worktrees/wf-3ffd90-ronin-dead-tools-a9a27fd/tests/test_work_folder.py:228: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.timeout(30)\n\ntests/test_work_folder.py:237\n  /data/worktrees/wf-3ffd90-ronin-dead-tools-a9a27fd/tests/test_work_folder.py:237: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.timeout(30)\n\ntests/test_work_folder.py:248\n  /data/worktrees/wf-3ffd90-ronin-dead-tools-a9a27fd/tests/test_work_folder.py:248: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.timeout(30)\n\ntests/test_work_folder.py:260\n  /data/worktrees/wf-3ffd90-ronin-dead-tools-a9a27fd/tests/test_work_folder.py:260: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html\n    @pytest.mark.timeout(30)\n\ntests/test_metrics.py::test_metrics_endpoint_200_and_body\n  /data/worktrees/wf-3ffd90-ronin-dead-tools-a9a27fd/tests/test_metrics.py:25: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.\n    from starlette.testclient import TestClient\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n95 passed, 85 warnings in 62.48s (0:01:02)\n",
+   "stderr_tail": ""
+  },
+  {
+   "command": [
+    "python",
+    "-c",
+    "from pathlib import Path; from ronin_mcp.server import create_server; required = [Path('tests/test_development.py'), Path('tests/test_gate.py'), Path('tests/test_pump.py')]; assert all(p.is_file() for p in required), 'required test files must be retained'; registered = {t.name for t in create_server().list_tools()}; dead = {'ronin_dev_list','ronin_dev_get','ronin_dev_events','ronin_dev_evidence','ronin_dev_create','ronin_dev_start','ronin_dev_steer','ronin_dev_reconfigure','ronin_dev_control','ronin_dev_relock','ronin_gate_approve','ronin_gate_reject','ronin_pump_list','ronin_pump_get','ronin_pump_rounds'}; assert registered.isdisjoint(dead); assert not any(name.startswith(('ronin_dev_','ronin_gate_','ronin_pump_')) for name in registered); print('RONIN dead tool removal: PASS')"
+   ],
+   "exit_code": 0,
+   "stdout_tail": "RONIN dead tool removal: PASS\n",
+   "stderr_tail": ""
+  }
+ ]
+}
