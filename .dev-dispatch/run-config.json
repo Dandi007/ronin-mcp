@@ -1,0 +1,19 @@
+{
+ "development_id": "dev-fg-bc84c2315a75",
+ "generation": 1,
+ "acceptance_commands": [
+  [
+   "python",
+   "-m",
+   "pytest",
+   "-q"
+  ],
+  [
+   "python",
+   "-c",
+   "from pathlib import Path; from ronin_mcp.server import create_server; required = [Path('tests/test_development.py'), Path('tests/test_gate.py'), Path('tests/test_pump.py')]; assert all(p.is_file() for p in required), 'required test files must be retained'; registered = {t.name for t in create_server().list_tools()}; dead = {'ronin_dev_list','ronin_dev_get','ronin_dev_events','ronin_dev_evidence','ronin_dev_create','ronin_dev_start','ronin_dev_steer','ronin_dev_reconfigure','ronin_dev_control','ronin_dev_relock','ronin_gate_approve','ronin_gate_reject','ronin_pump_list','ronin_pump_get','ronin_pump_rounds'}; assert registered.isdisjoint(dead); assert not any(name.startswith(('ronin_dev_','ronin_gate_','ronin_pump_')) for name in registered); print('RONIN dead tool removal: PASS')"
+  ]
+ ],
+ "setup_commands": [],
+ "acceptance_env": {}
+}
