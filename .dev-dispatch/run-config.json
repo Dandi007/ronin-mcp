@@ -1,0 +1,13 @@
+{
+ "development_id": "dev-fg-e3a9c208feed",
+ "generation": 1,
+ "acceptance_commands": [
+  [
+   "bash",
+   "-lc",
+   "set -eu; python -m pytest -q; python -c \"from ronin_mcp.server import create_server; n={t.name for t in create_server().list_tools()}; r={\\\"ronin_dev_list\\\",\\\"ronin_dev_get\\\",\\\"ronin_dev_events\\\",\\\"ronin_dev_evidence\\\",\\\"ronin_dev_create\\\",\\\"ronin_dev_start\\\",\\\"ronin_dev_steer\\\",\\\"ronin_dev_reconfigure\\\",\\\"ronin_dev_control\\\",\\\"ronin_dev_relock\\\",\\\"ronin_gate_approve\\\",\\\"ronin_gate_reject\\\",\\\"ronin_pump_list\\\",\\\"ronin_pump_get\\\",\\\"ronin_pump_rounds\\\"}; assert n.isdisjoint(r); print(\\\"RONIN dead tool removal: PASS\\\")\""
+  ]
+ ],
+ "setup_commands": [],
+ "acceptance_env": {}
+}
