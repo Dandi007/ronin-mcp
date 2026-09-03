@@ -6,23 +6,17 @@ disposition, recorded here as the single source of truth (SSoT):
     available   the tool is active and its behaviour is unchanged.
     fixed       the tool is active and a defect in its call path has been
                 repaired (see the ``reason`` field).
-    retired     the tool remains registered / visible in ``tools/list``
-                but invocations are refused with an explicit, structured
-                ``RETIRED`` rejection instead of surfacing as an
-                ``Unknown tool`` or a backend fault.
 
-The three categories are exhaustive: no tool may sit in a fourth state
-where it appears in ``tools/list`` yet failure looks like an operational
-fault (e.g. ``Connection refused`` / ``BACKEND_UNAVAILABLE``).
+The dd-dispatch / gate-approval / pump-state facets (``ronin_dev_*``,
+``ronin_gate_*``, ``ronin_pump_*``) are removed from the server surface
+entirely: they no longer appear in ``tools/list`` and therefore have no
+disposition entry here.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
 AVAILABLE = "available"
 FIXED = "fixed"
-RETIRED = "retired"
 
 DISPOSITIONS: dict[str, dict[str, str]] = {
     # --- friend (alias) + agent registry -> agent-bus (available) ---
@@ -205,124 +199,9 @@ DISPOSITIONS: dict[str, dict[str, str]] = {
         "disposition": FIXED,
         "reason": "repaired asyncio.run()-in-running-event-loop to direct await.",
     },
-    # --- dd dispatch lifecycle -> retired ---
-    "ronin_dev_list": {
-        "disposition": RETIRED,
-        "reason": "dd dispatch listing is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_dev_get": {
-        "disposition": RETIRED,
-        "reason": "dd dispatch retrieval is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_dev_events": {
-        "disposition": RETIRED,
-        "reason": "dd dispatch event polling is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_dev_evidence": {
-        "disposition": RETIRED,
-        "reason": "dd dispatch evidence export is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_dev_create": {
-        "disposition": RETIRED,
-        "reason": "dd dispatch creation is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_dev_start": {
-        "disposition": RETIRED,
-        "reason": "dd dispatch start is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_dev_steer": {
-        "disposition": RETIRED,
-        "reason": "dd dispatch steering is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_dev_reconfigure": {
-        "disposition": RETIRED,
-        "reason": "dd dispatch reconfiguration is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_dev_control": {
-        "disposition": RETIRED,
-        "reason": "dd dispatch pause/resume/cancel is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_dev_relock": {
-        "disposition": RETIRED,
-        "reason": "dd dispatch plugin relock is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    # --- gate approval -> retired ---
-    "ronin_gate_approve": {
-        "disposition": RETIRED,
-        "reason": "gate approval is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_gate_reject": {
-        "disposition": RETIRED,
-        "reason": "gate rejection is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    # --- pump state -> retired ---
-    "ronin_pump_list": {
-        "disposition": RETIRED,
-        "reason": "pump run listing is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_pump_get": {
-        "disposition": RETIRED,
-        "reason": "pump run retrieval is no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
-    "ronin_pump_rounds": {
-        "disposition": RETIRED,
-        "reason": "pump round event reads are no longer ronin-mcp's surface "
-        "(lifecycle owner: wf-3ffd90).",
-    },
 }
-
-RETIRED_CODE = "RETIRED"
 
 
 def disposition_of(tool_name: str) -> str:
     """Return the disposition string for a tool (must be a known tool)."""
     return DISPOSITIONS[tool_name]["disposition"]
-
-
-def is_retired(tool_name: str) -> bool:
-    """True when the tool is retired and must refuse with RETIRED."""
-    return DISPOSITIONS[tool_name]["disposition"] == RETIRED
-
-
-class ToolRetiredError(Exception):
-    """Raised when a retired tool is invoked.
-
-    Carries the canonical structured ``RETIRED`` envelope so the server
-    layer can surface it to the caller as a ToolError whose message is
-    parseable JSON (mirroring the backend-error convention):
-
-        {"code": "RETIRED", "message": "...", "details": {"retryable": False}}
-    """
-
-    def __init__(self, tool_name: str) -> None:
-        entry = DISPOSITIONS[tool_name]
-        self.tool_name = tool_name
-        self.reason = entry["reason"]
-        super().__init__(f"Tool '{tool_name}' is retired: {self.reason}")
-
-    @property
-    def envelope(self) -> dict[str, Any]:
-        return {
-            "code": RETIRED_CODE,
-            "message": f"Tool '{self.tool_name}' is retired: {self.reason}",
-            "details": {"retryable": False},
-        }
-
-
-def retire(tool_name: str) -> Any:
-    """Refuse an invocation on a retired tool (never returns)."""
-    raise ToolRetiredError(tool_name)

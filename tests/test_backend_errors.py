@@ -206,14 +206,13 @@ def test_backend_4xx_is_BACKEND_ERROR_not_retryable() -> None:
 
 
 @pytest.mark.timeout(30)
-def test_retired_dev_list_returns_retired_not_backend_fault(
+def test_dev_tools_removed_from_registry(
     mcp_server_factory: Any, make_config: Any
 ) -> None:
-    """ronin_dev_list is retired and returns RETIRED, not a backend fault.
+    """ronin_dev_* tools are removed: none remain registered in tools/list.
 
-    Even with an unreachable Controller wired in, the retirement guard
-    runs first and returns a structured RETIRED rejection (never
-    BACKEND_UNAVAILABLE / Connection refused).
+    Even with an unreachable Controller wired in, no ronin_dev_* /
+    ronin_gate_* / ronin_pump_* tool appears in the registry.
     """
     from ronin_mcp.backends.dev_dispatch import DevDispatchClient
     from ronin_mcp.server import build_mcp_server
@@ -229,11 +228,12 @@ def test_retired_dev_list_returns_retired_not_backend_fault(
 
     async def _run() -> None:
         async with Client(server) as client:
-            with pytest.raises(ToolError) as exc:
-                await client.call_tool("ronin_dev_list", {})
-            env = _error_envelope(exc.value)
-            assert env["code"] == "RETIRED"
-            assert env["details"]["retryable"] is False
+            tools = await client.list_tools()
+            names = {t.name for t in tools}
+            assert not any(
+                name.startswith(("ronin_dev_", "ronin_gate_", "ronin_pump_"))
+                for name in names
+            )
 
     asyncio.run(_run())
 

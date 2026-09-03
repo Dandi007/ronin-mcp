@@ -20,7 +20,6 @@ from typing import Any
 
 import pytest
 from fastmcp import Client
-from fastmcp.exceptions import ToolError
 
 
 def _extract_text(result: Any) -> str:
@@ -72,11 +71,11 @@ def test_ephemeral_routes_dd_writes_to_ephemeral_controller(
     ephemeral_server_factory: Any,
     make_config: Any,
 ) -> None:
-    """dd dispatch is retired: ronin_dev_create returns RETIRED in ephemeral mode.
+    """dd dispatch tools are removed: none remain registered in ephemeral mode.
 
-    The retirement guard runs before any backend routing, so no
-    Controller HTTP request (ephemeral or production) is issued and the
-    caller receives an explicit RETIRED rejection, not a routing write.
+    The ronin_dev_* / ronin_gate_* / ronin_pump_* tools are gone from the
+    registry, so no Controller / pump routing can be exercised through
+    them. This test proves the removal also holds in ephemeral mode.
     """
     config = make_config(ephemeral=True)
     config["backends"]["dev_dispatch"]["url"] = "http://127.0.0.1:1"
@@ -85,15 +84,12 @@ def test_ephemeral_routes_dd_writes_to_ephemeral_controller(
 
     async def _run() -> None:
         async with Client(server) as client:
-            with pytest.raises(ToolError) as exc:
-                await client.call_tool("ronin_dev_create", {
-                    "name": "gd:ephemeral-dev",
-                    "goal": "ephemeral",
-                    "idempotency_key": "ik-ephemeral-dev",
-                    "reason": "testing ephemeral routing",
-                    "initial_handoff": {},
-                })
-            assert "RETIRED" in str(exc.value)
+            tools = await client.list_tools()
+            names = {t.name for t in tools}
+            assert not any(
+                name.startswith(("ronin_dev_", "ronin_gate_", "ronin_pump_"))
+                for name in names
+            )
 
     asyncio.run(_run())
     rt.close()
