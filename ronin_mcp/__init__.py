@@ -1,10 +1,12 @@
 """Ronin MCP - aggregating facade for the ronin fleet control plane.
 
-Exposes the ronin_* MCP namespace by aggregating four backends:
+Exposes the ronin_* MCP namespace by aggregating two backends:
 - agent-bus HTTP (alias / agent / channel / message / consume / ack)
-- loop-engine Controller HTTP (development CRUD / gate / steer / control)
 - katana-work-folder MCP (work folder / file ops) via MCP client
-- file system /data/ronin/runs/ (pump run state)
+
+The retired loop-engine Controller (development CRUD / gate / steer /
+control) and the /data/ronin/runs pump-state filesystem reader were
+removed outright (wf-525fd4 M3 follow-up: remove, do not redirect).
 
 Write-side guardrails are enforced at the entrance: gd: prefix is allowed
 freely, ephemeral mode unlocks everything, and production writes outside

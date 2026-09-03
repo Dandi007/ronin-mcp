@@ -1,9 +1,10 @@
 """Ronin MCP server.
 
-build_mcp_server composes the seven facets onto a single FastMCP
-instance, sharing one AuthState and one backend client per backend.
-The main() entrypoint reads config + token, builds the server, and
-runs it over streamable-http bound to 127.0.0.1.
+build_mcp_server composes the four live facets (alias, chatgroup,
+messaging, work folder) onto a single FastMCP instance, sharing one
+AuthState and one backend client per backend. The main() entrypoint
+reads config + token, builds the server, and runs it over
+streamable-http bound to 127.0.0.1.
 
 The server is transport-agnostic: tests call build_mcp_server with a
 mock transport and use FastMCP's in-memory Client to exercise the
@@ -24,29 +25,25 @@ from starlette.responses import PlainTextResponse
 
 from ronin_mcp.auth import AuthState, WriteAuthError
 from ronin_mcp.backends.agent_bus import AgentBusClient, BackendError
-from ronin_mcp.backends.dev_dispatch import DevDispatchClient
-from ronin_mcp.backends.pump_state import PumpStateClient
 from ronin_mcp.backends.work_folder import WorkFolderClient
 from ronin_mcp.config import load_config, resolve_gateway_token
-from ronin_mcp.disposition import ToolRetiredError
 
 MCP_INSTRUCTIONS = """Ronin MCP - aggregating facade for the ronin fleet control plane.
 
 1. Read tools (list/get/resolve/events/whoami/read/stat/capabilities) are
    freely available to any authenticated caller.
-2. Write tools (register/create/rebind/send/broadcast/approve/reject/start/
-   steer/control/reconfigure/relock/add_member/remove_member/save/write/edit/
-   delete/copy/rename/batch/evidence_put/evidence_migrate/append_progress/
-   reconcile/reindex/consume) are guarded at the entrance.
+2. Write tools (register/create/rebind/send/broadcast/add_member/remove_member/
+   save/write/edit/delete/copy/rename/batch/evidence_put/evidence_migrate/
+   append_progress/reconcile/reindex/consume) are guarded at the entrance.
 3. gd: prefix marks test/dev resources; writes targeting gd: resources are
    allowed without explicit production authorization.
 4. RONIN_PROD_WRITE=1 (or --prod-write) unlocks production writes outside the
    gd: namespace.
-5. --ephemeral (or RONIN_EPHEMERAL=1) routes all writes to ephemeral backends
-   and unlocks everything.
-6. Gate approvals (ronin_gate_approve / ronin_gate_reject) ALWAYS require
-   RONIN_PROD_WRITE=1, even for gd: developments, because they are B-class
+5. Fleet-wide / B-class operations (broadcast / reconcile / reindex) ALWAYS
+   require RONIN_PROD_WRITE=1, even for gd: resources, because they are
    irreversible operations.
+6. --ephemeral (or RONIN_EPHEMERAL=1) routes all writes to ephemeral backends
+   and unlocks everything.
 7. Tokens never enter model context: tool parameters never carry credentials,
    and tool return values never include token material.
 """
@@ -56,13 +53,11 @@ def build_mcp_server(
     config: dict[str, Any],
     *,
     bus_client: AgentBusClient | None = None,
-    controller_client: DevDispatchClient | None = None,
     work_folder_client: WorkFolderClient | None = None,
-    pump_client: PumpStateClient | None = None,
     error_wrapper: Callable[[Callable[[], Any]], Any] | None = None,
     ephemeral_runtime: Any = None,
 ) -> Any:
-    """Build a FastMCP server with all seven facets registered.
+    """Build a FastMCP server with the four live facets registered.
 
     Client injection is optional so tests can substitute doubles. When a
     client is None, build_mcp_server constructs the production client
@@ -93,9 +88,7 @@ def build_mcp_server(
 
     backends = config.get("backends", {})
     bus_cfg = backends.get("agent_bus", {})
-    dd_cfg = backends.get("dev_dispatch", {})
     wf_cfg = backends.get("work_folder", {})
-    pump_cfg = backends.get("pump_state", {})
 
     if auth.ephemeral and ephemeral_runtime is not None:
         # Spec 判据 1 rule 1: route ALL writes to --ephemeral backends.
@@ -103,45 +96,67 @@ def build_mcp_server(
             ephemeral_runtime.bus_url,
             gateway_token=ephemeral_runtime.bus_gateway_token,
         )
-        controller = controller_client or DevDispatchClient(
-            ephemeral_runtime.controller_url,
-        )
         work_folder = work_folder_client or _build_ephemeral_work_folder(ephemeral_runtime)
     else:
         bus = bus_client or AgentBusClient(
             bus_cfg.get("url", "http://127.0.0.1:7490"),
             gateway_token=resolve_gateway_token(config),
         )
-        controller = controller_client or DevDispatchClient(
-            dd_cfg.get("url", "http://127.0.0.1:7460"),
-        )
         work_folder = work_folder_client or WorkFolderClient(
             wf_cfg.get("mcp_url", "http://127.0.0.1:5605/mcp"),
         )
-    pump = pump_client or PumpStateClient(
-        pump_cfg.get("runs_root", "/data/ronin/runs"),
-    )
 
     wrapper = error_wrapper or _make_error_wrapper(ToolError)
     async_wrapper = _make_async_error_wrapper(ToolError)
 
     from ronin_mcp.facets.alias import register as register_alias
     from ronin_mcp.facets.chatgroup import register as register_chatgroup
-    from ronin_mcp.facets.development import register as register_development
-    from ronin_mcp.facets.gate import register as register_gate
     from ronin_mcp.facets.messaging import register as register_messaging
-    from ronin_mcp.facets.pump import register as register_pump
     from ronin_mcp.facets.work_folder import register as register_work_folder
 
     register_alias(mcp, auth, bus, wrapper)
     register_chatgroup(mcp, auth, bus, wrapper)
     register_messaging(mcp, auth, bus, wrapper)
-    register_development(mcp, auth, controller, wrapper)
-    register_gate(mcp, auth, controller, wrapper)
-    register_pump(mcp, pump, wrapper)
     register_work_folder(mcp, auth, work_folder, async_wrapper)
 
     return mcp
+
+
+class _ServerIntrospection:
+    """Synchronous ``list_tools`` view over a FastMCP server.
+
+    FastMCP's ``list_tools`` is an async function, but acceptance-style
+    introspection wants a plain synchronous ``create_server().list_tools()``
+    call. This thin proxy forwards every attribute to the underlying
+    server and exposes a synchronous ``list_tools()`` that runs the async
+    one in a fresh event loop. Other server capabilities (``run``,
+    ``http_app``, ...) are forwarded unchanged.
+    """
+
+    def __init__(self, server: Any) -> None:
+        self._server = server
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._server, name)
+
+    def list_tools(self) -> list[Any]:
+        import asyncio
+
+        return asyncio.run(self._server.list_tools())
+
+
+def create_server(config: dict[str, Any] | None = None) -> Any:
+    """Build the ronin-mcp server from the standard config resolution path.
+
+    When ``config`` is omitted the default config (deep-merged with any
+    user config file / environment overrides) is loaded via
+    ``load_config()``. Returns a proxy exposing a synchronous
+    ``list_tools()`` for server-level introspection (e.g.
+    ``create_server().list_tools()``).
+    """
+    if config is None:
+        config = load_config()
+    return _ServerIntrospection(build_mcp_server(config))
 
 
 def _register_metrics_route(mcp: Any) -> None:
@@ -183,8 +198,6 @@ def _make_error_wrapper(tool_error_cls: type) -> Callable[[Callable[[], Any]], A
         WriteAuthError  -> {"code": "PROD_WRITE_NOT_AUTHORIZED", ...}
         BackendError    -> {"code": "BACKEND_ERROR" | "BACKEND_UNAVAILABLE",
                             "message": ..., "details": {"retryable": bool}}
-        ToolRetiredError -> {"code": "RETIRED",
-                             "message": ..., "details": {"retryable": False}}
     """
 
     def _wrapper(fn: Callable[[], Any]) -> Any:
@@ -198,10 +211,6 @@ def _make_error_wrapper(tool_error_cls: type) -> Callable[[Callable[[], Any]], A
             raise tool_error_cls(
                 json.dumps(exc.envelope, ensure_ascii=False)
             ) from exc
-        except ToolRetiredError as exc:
-            raise tool_error_cls(
-                json.dumps(exc.envelope, ensure_ascii=False)
-            ) from exc
 
     return _wrapper
 
@@ -212,7 +221,7 @@ def _make_async_error_wrapper(tool_error_cls: type) -> Callable[[Callable[[], An
     The work-folder facet tools are ``async def`` and call the backend's
     async ``call()`` entry directly. This wrapper awaits the given
     coroutine producer and converts the same exception shapes (auth /
-    backend / retired) into the canonical structured ToolError envelope.
+    backend) into the canonical structured ToolError envelope.
     """
 
     async def _wrapper(fn: Callable[[], Any]) -> Any:
@@ -223,10 +232,6 @@ def _make_async_error_wrapper(tool_error_cls: type) -> Callable[[Callable[[], An
                 json.dumps(exc.payload, ensure_ascii=False)
             ) from exc
         except BackendError as exc:
-            raise tool_error_cls(
-                json.dumps(exc.envelope, ensure_ascii=False)
-            ) from exc
-        except ToolRetiredError as exc:
             raise tool_error_cls(
                 json.dumps(exc.envelope, ensure_ascii=False)
             ) from exc

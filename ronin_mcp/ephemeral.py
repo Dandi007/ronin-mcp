@@ -1,20 +1,18 @@
-"""Ephemeral runtime: temporary agent-bus + Controller + work-folder dir.
+"""Ephemeral runtime: temporary agent-bus + work-folder dir.
 
 Spec 判据 1 rule 1 + 判据 3 require ``--ephemeral`` to:
 
 1. Start a temporary agent-bus instance (agent-bus itself supports
    ``--ephemeral``) and route all agent-bus writes to it.
-2. Start a temporary loop-engine Controller instance and route all dd
-   writes to it.
-3. Route all work-folder writes to a temporary directory.
-4. Clean up every temporary resource on process exit.
+2. Route all work-folder writes to a temporary directory.
+3. Clean up every temporary resource on process exit.
 
-``EphemeralRuntime`` owns those resources and exposes the URLs / tokens
-the server needs to wire its backend clients at the ephemeral backends
-instead of the configured (potentially production) backend URLs. The
+``EphemeralRuntime`` owns those resources and exposes the URL / token
+the server needs to wire its agent-bus client at the ephemeral backend
+instead of the configured (potentially production) backend URL. The
 spawners are injectable so tests can boot in-process doubles instead of
-subprocesses; the default spawners launch the real backends as
-subprocesses.
+subprocesses; the default spawner launches the real agent-bus as a
+subprocess.
 """
 
 from __future__ import annotations
@@ -29,15 +27,14 @@ import tempfile
 import time
 from typing import Any, Callable, Optional
 
-# Public type aliases for the injectable spawners.
+# Public type alias for the injectable bus spawner.
 BusSpawner = Callable[[], "tuple[str, str, Callable[[], None]]"]
-ControllerSpawner = Callable[[], "tuple[str, Callable[[], None]]"]
 
 
 class EphemeralRuntime:
-    """Owns temporary agent-bus + Controller + work-folder resources.
+    """Owns temporary agent-bus + work-folder resources.
 
-    ``start()`` boots the ephemeral backends; ``close()`` tears them
+    ``start()`` boots the ephemeral agent-bus; ``close()`` tears it
     down and removes the temp work-folder root. ``close()`` is
     idempotent and registered with ``atexit`` so the cleanup runs even
     if the server is killed by a signal that bypasses the normal
@@ -48,16 +45,13 @@ class EphemeralRuntime:
         self,
         *,
         bus_spawner: BusSpawner | None = None,
-        controller_spawner: ControllerSpawner | None = None,
         work_folder_root: str | None = None,
     ) -> None:
         self._bus_spawner = bus_spawner or default_bus_spawner
-        self._controller_spawner = controller_spawner or default_controller_spawner
         self._work_folder_root: str | None = work_folder_root
         self._owns_wf_root = work_folder_root is None
         self._bus_url = ""
         self._bus_gateway_token = ""
-        self._controller_url = ""
         self._cleanups: list[Callable[[], None]] = []
         self._started = False
         self._closed = False
@@ -70,10 +64,6 @@ class EphemeralRuntime:
     @property
     def bus_gateway_token(self) -> str:
         return self._bus_gateway_token
-
-    @property
-    def controller_url(self) -> str:
-        return self._controller_url
 
     @property
     def work_folder_root(self) -> str:
@@ -94,10 +84,6 @@ class EphemeralRuntime:
         self._bus_url = bus_url
         self._bus_gateway_token = bus_token
         self._cleanups.append(bus_cleanup)
-
-        ctrl_url, ctrl_cleanup = self._controller_spawner()
-        self._controller_url = ctrl_url
-        self._cleanups.append(ctrl_cleanup)
 
         self._started = True
         if not self._atexit_registered:
@@ -198,132 +184,6 @@ def default_bus_spawner() -> "tuple[str, str, Callable[[], None]]":
                 proc.kill()
 
     return url, gateway_token, _cleanup
-
-
-def default_controller_spawner() -> "tuple[str, Callable[[], None]]":
-    """Spawn a temporary loop-engine Controller with FakeJobd.
-
-    The Controller has no ``--ephemeral`` flag, so we boot it as a
-    subprocess with a temp runtime root + ``LOOP_ENGINE_DEVELOPMENT_USE_FAKE_JOBD=1``
-    and a config that binds an OS-assigned port. We discover the bound
-    port by polling ``/readyz`` on a candidate port range derived from
-    the config; to keep this robust we instead let the subprocess pick
-    a free port by setting ``controller.port: 0`` and reading the port
-    it prints on its first stdout line (the ronin-mcp ephemeral launcher
-    passes a wrapper that does exactly that).
-    """
-    runtime_root = tempfile.mkdtemp(prefix="ronin-controller-ephemeral-")
-    config_path = os.path.join(runtime_root, "config.yaml")
-    with open(config_path, "w", encoding="utf-8") as f:
-        f.write(
-            "schema_version: 1\n"
-            f"runtime_root: {runtime_root}\n"
-            "controller:\n"
-            "  host: 127.0.0.1\n"
-            "  port: 0\n"
-            "  reconcile_interval_seconds: 2\n"
-            "  gate_ttl_seconds: 86400\n"
-            "  gate_max_renewals: 3\n"
-            "  acceptance_output_max_chars: 100000\n"
-            "  reconciler_error_alert_ticks: 5\n"
-            "  max_active_developments: 2\n"
-            "reconcile_cooldown:\n"
-            "  initial_seconds: 5\n"
-            "  max_seconds: 300\n"
-            "  factor: 2.0\n"
-            "  deterministic_failure_max_attempts: 2\n"
-            "mcp:\n"
-            "  host: 127.0.0.1\n"
-            "  port: 0\n"
-            "loop_engine:\n"
-            "  jobd_url: http://127.0.0.1:7455\n"
-            "github:\n"
-            "  gh_command: /usr/bin/gh\n"
-            "  allowed_hosts: [github.com]\n"
-            "  allow_local_remotes: false\n"
-            "plugin_producer:\n"
-            "  root: ''\n"
-            "  expected_commit: ''\n"
-            "  protocol: dev-dispatch.attempt-context/v1\n"
-            "  capability_manifest_digest: ''\n"
-            "  bundle_digest: ''\n"
-            "  workflow_digest: ''\n"
-            "  lifecycle_digest: ''\n"
-            "  artifact_digest: ''\n"
-            "  schema_digests: {}\n"
-            "  contract_version: 1\n"
-            "  verify_timeout_seconds: 60\n"
-            "paths:\n"
-            "  allowed_worktree_roots: [/data/worktrees, /data/code]\n"
-            "profiles: {}\n"
-        )
-
-    env = dict(os.environ)
-    env["LOOP_ENGINE_DEVELOPMENT_CONFIG"] = config_path
-    env["LOOP_ENGINE_DEVELOPMENT_RUNTIME_ROOT"] = runtime_root
-    env["LOOP_ENGINE_DEVELOPMENT_USE_FAKE_JOBD"] = "1"
-
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "loop_engine_development_mcp.controller_server"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        env=env,
-    )
-
-    # The Controller does not print its bound port. Poll /readyz on a
-    # candidate port by reading the OS-assigned port from the
-    # subprocess's first stdout line if it prints one; otherwise fall
-    # back to scanning a small range of likely ports.
-    port: Optional[int] = None
-    deadline = time.time() + 30
-    while time.time() < deadline:
-        line = proc.stdout.readline() if proc.stdout else ""
-        if not line:
-            if proc.poll() is not None:
-                stderr = ""
-                if proc.stderr:
-                    stderr = proc.stderr.read()
-                raise RuntimeError(
-                    f"controller ephemeral subprocess exited early: {stderr}"
-                )
-            time.sleep(0.05)
-            continue
-        line = line.strip()
-        # Accept "PORT=<n>" or "controller listening on <n>" style lines.
-        for prefix in ("PORT=", "CONTROLLER_PORT=", "AGENT_BUS_EPHEMERAL_PORT="):
-            if line.startswith(prefix):
-                try:
-                    port = int(line.split("=", 1)[1])
-                    break
-                except ValueError:
-                    pass
-        if port is not None:
-            break
-
-    # If the subprocess did not print a port, we cannot discover it
-    # without parsing the socket; tear down and raise a clear error so
-    # the caller knows to inject a spawner in environments without the
-    # real Controller.
-    if port is None:
-        proc.terminate()
-        raise RuntimeError(
-            "ephemeral Controller subprocess did not report a port; "
-            "inject a controller_spawner to boot an in-process double"
-        )
-
-    url = f"http://127.0.0.1:{port}"
-
-    def _cleanup() -> None:
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-        shutil.rmtree(runtime_root, ignore_errors=True)
-
-    return url, _cleanup
 
 
 class TempDirWorkFolderClient:

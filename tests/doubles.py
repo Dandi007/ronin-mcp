@@ -1,13 +1,13 @@
-"""In-process HTTP doubles for agent-bus and the loop-engine Controller.
+"""In-process HTTP double for agent-bus.
 
-The doubles bind a ThreadingHTTPServer on 127.0.0.1 with an OS-assigned
+The double binds a ThreadingHTTPServer on 127.0.0.1 with an OS-assigned
 port so the production httpx.Client in ronin_mcp.backends.* can talk to
-them over real TCP — this exercises the full request/response path
+it over real TCP — this exercises the full request/response path
 (headers, error wrapping) without booting any real backend process.
 
-The doubles are intentionally minimal: they implement only the endpoint
-surface that ronin_mcp facets touch, with a small in-memory store. They
-are NOT spec-complete replicas of agent-bus or the Controller.
+The double is intentionally minimal: it implements only the endpoint
+surface that ronin_mcp facets touch, with a small in-memory store. It is
+NOT a spec-complete replica of agent-bus.
 """
 
 from __future__ import annotations
@@ -309,106 +309,6 @@ def _public_channel(channel: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-class ControllerDoubleHandler(_Handler):
-    """Minimal loop-engine Controller HTTP surface used by ronin_mcp facets."""
-
-    def do_GET(self) -> None:  # noqa: N802
-        parsed = urlparse(self.path)
-        path = parsed.path.rstrip("/")
-        params = parse_qs(parsed.query)
-        store = self.server_state["store"]
-
-        if path == "/healthz" or path == "/readyz":
-            self._send_json(200, {"status": "ok"})
-            return
-        if path == "/v1/developments":
-            state = params.get("state", [None])[0]
-            repo = params.get("repo", [None])[0]
-            limit = int(params.get("limit", ["20"])[0])
-            devs = list(store["developments"].values())
-            if state:
-                devs = [d for d in devs if d.get("state") == state]
-            if repo:
-                devs = [d for d in devs if d.get("repo") == repo]
-            self._send_json(200, {"developments": devs[:limit], "next_cursor": None})
-            return
-        if path.startswith("/v1/developments/"):
-            rest = path[len("/v1/developments/"):]
-            if rest.endswith("/events"):
-                dev_id = rest[: -len("/events")].split("/")[0]
-                self._send_json(200, {"development_id": dev_id, "events": store["events"].get(dev_id, [])})
-                return
-            if rest.endswith("/evidence"):
-                dev_id = rest[: -len("/evidence")].split("/")[0]
-                self._send_json(200, {"development_id": dev_id, "evidence": store["evidence"].get(dev_id, [])})
-                return
-            dev_id = rest
-            dev = store["developments"].get(dev_id)
-            if dev is None:
-                self._send_json(404, {"code": "NOT_FOUND", "message": "development not found"})
-                return
-            self._send_json(200, dev)
-            return
-        self._send_json(404, {"code": "NOT_FOUND", "message": f"unknown path {path}"})
-
-    def do_POST(self) -> None:  # noqa: N802
-        parsed = urlparse(self.path)
-        path = parsed.path.rstrip("/")
-        store = self.server_state["store"]
-        operator = self._on_behalf()
-
-        if path == "/v1/developments":
-            body = self._read_body()
-            dev_id = body.get("name", "") or _new_id("dev-")
-            rev = 1
-            dev = {
-                "development_id": dev_id,
-                "name": body.get("name", dev_id),
-                "goal": body.get("goal", ""),
-                "state": "BOOTSTRAPPING",
-                "revision": rev,
-                "repo": body.get("work_folder", ""),
-                "operator_identity": operator,
-            }
-            store["developments"][dev_id] = dev
-            store["events"].setdefault(dev_id, [])
-            self._send_json(200, dev)
-            return
-        if path.startswith("/v1/developments/"):
-            rest = path[len("/v1/developments/"):]
-            parts = rest.split("/commands/")
-            if len(parts) == 2:
-                dev_id = parts[0]
-                command = parts[1]
-                dev = store["developments"].get(dev_id)
-                if dev is None:
-                    self._send_json(404, {"code": "NOT_FOUND", "message": "development not found"})
-                    return
-                body = self._read_body()
-                rev = dev.get("revision", 1) + 1
-                dev["revision"] = rev
-                store["events"].setdefault(dev_id, []).append({
-                    "type": "command",
-                    "command": command,
-                    "operator_identity": operator,
-                    "revision": rev,
-                    "reason": body.get("reason", ""),
-                })
-                if command == "control":
-                    action = body.get("action", "")
-                    if action == "pause":
-                        dev["state"] = "PAUSED"
-                    elif action == "resume":
-                        dev["state"] = "RUNNING"
-                    elif action == "cancel":
-                        dev["state"] = "CANCELLED"
-                elif command == "gate":
-                    dev["state"] = "GATE_APPROVED" if body.get("decision") == "approve" else "GATE_REJECTED"
-                self._send_json(200, dev)
-                return
-        self._send_json(404, {"code": "NOT_FOUND", "message": f"unknown path {path}"})
-
-
 class _DoubleServer:
     """Run a handler on a ThreadingHTTPServer bound to an OS-assigned port."""
 
@@ -473,15 +373,3 @@ def make_bus_double(token: str = "test-gateway-token-32-chars-minimum!") -> _Dou
         "token": token,
     }
     return _DoubleServer(AgentBusDoubleHandler, state)
-
-
-def make_controller_double() -> _DoubleServer:
-    """Build a loop-engine Controller HTTP double with an empty store."""
-    state = {
-        "store": {
-            "developments": {},
-            "events": {},
-            "evidence": {},
-        },
-    }
-    return _DoubleServer(ControllerDoubleHandler, state)

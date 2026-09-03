@@ -26,14 +26,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
             "url": "http://127.0.0.1:7490",
             "gateway_token_file": "/data/ronin/secrets/ronin-mcp.token",
         },
-        "dev_dispatch": {
-            "url": "http://127.0.0.1:7460",
-        },
         "work_folder": {
             "mcp_url": "http://127.0.0.1:5605/mcp",
-        },
-        "pump_state": {
-            "runs_root": "/data/ronin/runs",
         },
     },
     "auth": {

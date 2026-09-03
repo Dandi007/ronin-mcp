@@ -110,11 +110,9 @@ def test_backend_unreachable_surfaces_as_BACKEND_UNAVAILABLE_and_retryable(
     server = build_mcp_server(
         make_config(),
         bus_client=unreachable_bus,
-        # controller / work_folder doubles are wired by the factory but
-        # we only exercise the bus leg here.
-        controller_client=None,
+        # work-folder fake is wired by the factory but we only exercise
+        # the bus leg here.
         work_folder_client=None,
-        pump_client=None,
     )
 
     async def _run() -> None:
@@ -146,9 +144,7 @@ def test_backend_error_response_surfaces_as_BACKEND_ERROR() -> None:
         server = build_mcp_server(
             config,
             bus_client=bus,
-            controller_client=None,
             work_folder_client=None,
-            pump_client=None,
         )
 
         async def _run() -> None:
@@ -185,9 +181,7 @@ def test_backend_4xx_is_BACKEND_ERROR_not_retryable() -> None:
         server = build_mcp_server(
             config,
             bus_client=bus,
-            controller_client=None,
             work_folder_client=None,
-            pump_client=None,
         )
 
         async def _run() -> None:
@@ -206,39 +200,6 @@ def test_backend_4xx_is_BACKEND_ERROR_not_retryable() -> None:
 
 
 @pytest.mark.timeout(30)
-def test_retired_dev_list_returns_retired_not_backend_fault(
-    mcp_server_factory: Any, make_config: Any
-) -> None:
-    """ronin_dev_list is retired and returns RETIRED, not a backend fault.
-
-    Even with an unreachable Controller wired in, the retirement guard
-    runs first and returns a structured RETIRED rejection (never
-    BACKEND_UNAVAILABLE / Connection refused).
-    """
-    from ronin_mcp.backends.dev_dispatch import DevDispatchClient
-    from ronin_mcp.server import build_mcp_server
-
-    unreachable_ctrl = DevDispatchClient("http://127.0.0.1:1")
-    server = build_mcp_server(
-        make_config(),
-        bus_client=None,
-        controller_client=unreachable_ctrl,
-        work_folder_client=None,
-        pump_client=None,
-    )
-
-    async def _run() -> None:
-        async with Client(server) as client:
-            with pytest.raises(ToolError) as exc:
-                await client.call_tool("ronin_dev_list", {})
-            env = _error_envelope(exc.value)
-            assert env["code"] == "RETIRED"
-            assert env["details"]["retryable"] is False
-
-    asyncio.run(_run())
-
-
-@pytest.mark.timeout(30)
 def test_backend_error_envelope_shape(mcp_server_factory: Any, make_config: Any) -> None:
     """The structured envelope always carries code/message/details.retryable."""
     from ronin_mcp.backends.agent_bus import AgentBusClient
@@ -248,9 +209,7 @@ def test_backend_error_envelope_shape(mcp_server_factory: Any, make_config: Any)
     server = build_mcp_server(
         make_config(),
         bus_client=unreachable_bus,
-        controller_client=None,
         work_folder_client=None,
-        pump_client=None,
     )
 
     async def _run() -> None:

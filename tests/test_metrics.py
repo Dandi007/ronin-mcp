@@ -57,13 +57,12 @@ def test_metrics_does_not_touch_backends(
     mcp_server_factory: Any,
     make_config: Any,
     bus_double: Any,
-    controller_double: Any,
     fake_work_folder: Any,
 ) -> None:
     """Calling /metrics must not produce any backend traffic.
 
     The endpoint is process-local: it reports ronin_mcp's own liveness
-    and must never probe agent-bus / loop-engine / work-folder / pump.
+    and must never probe agent-bus / work-folder.
     """
     server = mcp_server_factory(make_config())
     app = server.http_app(path="/mcp")
@@ -76,10 +75,9 @@ def test_metrics_does_not_touch_backends(
     assert resp.status_code == 200
     assert resp.text.strip().endswith("ronin_mcp_up 1")
 
-    # The HTTP doubles record every request they served; /metrics must
+    # The HTTP double records every request it served; /metrics must
     # not have added any backend calls.
     assert len(bus_double.requests) == 0, "agent-bus was probed by /metrics"
-    assert len(controller_double.requests) == 0, "loop-engine was probed by /metrics"
     assert fake_work_folder.calls == [], "work-folder was probed by /metrics"
 
 

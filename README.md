@@ -1,17 +1,15 @@
 # Ronin MCP (浪人 MCP)
 
-Ronin MCP is an **aggregating façade** that exposes the ronin fleet's entire
-control plane under a single `ronin_*` MCP namespace. It is the management
-console for the ronin fleet, collapsing the control surfaces scattered across
-agent-bus / dev-dispatch / goal-agent / work-folder / agent-runtime into one
-MCP server bound to `127.0.0.1`.
+Ronin MCP is an **aggregating façade** that exposes the ronin fleet's control
+plane under a single `ronin_*` MCP namespace. It is the management console
+for the ronin fleet, collapsing the control surfaces scattered across
+agent-bus / work-folder into one MCP server bound to `127.0.0.1`.
 
 ## North star
 
-Expose the ronin fleet's entire control plane through one MCP so any agent
+Expose the ronin fleet's control plane through one MCP so any agent
 (including the user) can drive it. The core demonstration surface is the
-friend/group/message CRUD, but the same entrance also covers dd dispatch,
-work-folder, pump state, and gate approvals.
+friend/group/message CRUD, plus work-folder file operations.
 
 ## Architecture
 
@@ -20,9 +18,11 @@ One MCP server, internally issuing HTTP calls to multiple backends:
 | Backend | Protocol | Address | Purpose |
 |---------|----------|---------|---------|
 | agent-bus HTTP | HTTP REST | `http://127.0.0.1:7490` | alias / agent / channel / message / consume / ack |
-| loop-engine Controller | HTTP REST | `http://127.0.0.1:7460` | development CRUD / gate / steer / control |
 | katana-work-folder MCP | MCP (streamable-http) | via MCP client | work folder / file ops |
-| file system | local read | `/data/ronin/runs/` | pump run state |
+
+The retired loop-engine Controller surface and the `/data/ronin/runs/` pump
+reader were removed outright (wf-525fd4 M3 follow-up: remove, do not
+redirect).
 
 ## Read/write separation
 
@@ -39,9 +39,10 @@ Write tools are guarded at the entrance:
 3. **Production writes** (non-`gd:`, non-ephemeral): require
    `RONIN_PROD_WRITE=1` / `--prod-write`; otherwise rejected with
    `PROD_WRITE_NOT_AUTHORIZED`.
-4. **Gate approvals** (`ronin_gate_approve` / `ronin_gate_reject`) ALWAYS
-   require `RONIN_PROD_WRITE=1`, even for `gd:` developments, because they
-   are B-class irreversible operations.
+4. **Fleet-wide / B-class operations** (`ronin_msg_broadcast`,
+   `ronin_wf_reconcile`, `ronin_wf_reindex`) ALWAYS require
+   `RONIN_PROD_WRITE=1`, even for `gd:` resources, because they are
+   irreversible operations.
 
 ## Token red line
 
@@ -68,14 +69,11 @@ RONIN_GATEWAY_TOKEN=$(cat /data/ronin/secrets/ronin-mcp.token) \
 uv run --extra dev python -m pytest -q
 ```
 
-## Tool surface (7 facets)
+## Tool surface (4 facets)
 
 - **Friend (alias registry)**: `ronin_alias_*`, `ronin_agent_*`
 - **Chatgroup**: `ronin_chatgroup_*`
 - **Messaging**: `ronin_msg_*`, `ronin_inbox_*`
-- **dd dispatch**: `ronin_dev_*`
 - **Work folder**: `ronin_wf_*`, `ronin_fs_*`
-- **Pump state**: `ronin_pump_*`
-- **Gate approval**: `ronin_gate_*`
 
 See `spec.md` (frozen contract) for the full tool list with parameters.

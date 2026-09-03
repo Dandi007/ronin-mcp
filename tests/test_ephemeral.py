@@ -1,9 +1,9 @@
 """Ephemeral mode (spec §判据 1 rule 1 + §判据 3).
 
 --ephemeral must:
-1. Start temporary agent-bus + Controller instances.
-2. Route ALL writes to those ephemeral backends — never to the
-   configured (potentially production) backend URLs.
+1. Start a temporary agent-bus instance.
+2. Route ALL writes to the ephemeral backend — never to the configured
+   (potentially production) backend URL.
 3. Route work-folder writes to a temp directory.
 4. Clean up every temporary resource on exit.
 
@@ -64,38 +64,6 @@ def test_ephemeral_routes_writes_to_ephemeral_bus_not_configured_url(
 
     # The write landed in the ephemeral bus double's store.
     assert "prod-ephemeral-alias" in bus_double.store["aliases"]
-    rt.close()
-
-
-@pytest.mark.timeout(30)
-def test_ephemeral_routes_dd_writes_to_ephemeral_controller(
-    ephemeral_server_factory: Any,
-    make_config: Any,
-) -> None:
-    """dd dispatch is retired: ronin_dev_create returns RETIRED in ephemeral mode.
-
-    The retirement guard runs before any backend routing, so no
-    Controller HTTP request (ephemeral or production) is issued and the
-    caller receives an explicit RETIRED rejection, not a routing write.
-    """
-    config = make_config(ephemeral=True)
-    config["backends"]["dev_dispatch"]["url"] = "http://127.0.0.1:1"
-
-    server, rt = ephemeral_server_factory(config)
-
-    async def _run() -> None:
-        async with Client(server) as client:
-            with pytest.raises(ToolError) as exc:
-                await client.call_tool("ronin_dev_create", {
-                    "name": "gd:ephemeral-dev",
-                    "goal": "ephemeral",
-                    "idempotency_key": "ik-ephemeral-dev",
-                    "reason": "testing ephemeral routing",
-                    "initial_handoff": {},
-                })
-            assert "RETIRED" in str(exc.value)
-
-    asyncio.run(_run())
     rt.close()
 
 
@@ -167,7 +135,6 @@ def test_ephemeral_runtime_cleanup_removes_temp_work_folder_root(
     try:
         rt = EphemeralRuntime(
             bus_spawner=lambda: ("http://127.0.0.1:1", "tok", lambda: None),
-            controller_spawner=lambda: ("http://127.0.0.1:1", lambda: None),
             work_folder_root=controlled_root,
         )
         rt.start()
@@ -189,7 +156,6 @@ def test_ephemeral_runtime_close_is_idempotent() -> None:
 
     rt = EphemeralRuntime(
         bus_spawner=lambda: ("http://127.0.0.1:1", "tok", lambda: None),
-        controller_spawner=lambda: ("http://127.0.0.1:1", lambda: None),
     )
     rt.start()
     rt.close()
@@ -198,20 +164,17 @@ def test_ephemeral_runtime_close_is_idempotent() -> None:
 
 @pytest.mark.timeout(30)
 def test_ephemeral_runtime_calls_spawner_cleanups() -> None:
-    """EphemeralRuntime.close() invokes every spawner's cleanup callable."""
+    """EphemeralRuntime.close() invokes the spawner's cleanup callable."""
     from ronin_mcp.ephemeral import EphemeralRuntime
 
     bus_cleaned = []
-    ctrl_cleaned = []
 
     rt = EphemeralRuntime(
         bus_spawner=lambda: ("http://127.0.0.1:1", "tok", lambda: bus_cleaned.append(True)),
-        controller_spawner=lambda: ("http://127.0.0.1:1", lambda: ctrl_cleaned.append(True)),
     )
     rt.start()
     rt.close()
     assert bus_cleaned == [True]
-    assert ctrl_cleaned == [True]
 
 
 @pytest.mark.timeout(30)

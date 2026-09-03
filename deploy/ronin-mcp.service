@@ -1,6 +1,6 @@
 [Unit]
 Description=Ronin MCP (aggregating facade for the ronin fleet control plane)
-After=agent-bus-server.service agent-bus-mcp.service loop-engine-development-mcp.service
+After=agent-bus-server.service agent-bus-mcp.service
 
 [Service]
 Type=simple
